@@ -1,52 +1,59 @@
-# app.py
-from flask import Flask, jsonify, request
-from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from datetime import datetime, UTC
+import random
 import os
-
-# Load environment variables
-load_dotenv()
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 
-# TODO Replace with actual implementations
-# Sample data
-books = [
-    {"id": 1, "title": "The Great Gatsby", "author": "F. Scott Fitzgerald"},
-    {"id": 2, "title": "1984", "author": "George Orwell"}
-]
 
-@app.route('/')
-def home():
-    return jsonify({"message": "Welcome to the Book API!", "status": "success"})
+# Mock emotion detector - replace with actual ML model
+def generate_poem(emotions: dict[str, float]) -> str:
+    """Returns mock emotion scores for demonstration"""
+    words = ['chicken', 'jockey', 'Steve', 'crafting', 'table', 'flint', 'steel']
+    return '\n'.join(
+        [' '.join(
+            [random.choice(words) for _ in range(10)]
+        )
+            for _ in range(4)
+        ]
+    )
 
-@app.route('/api/books', methods=['GET'])
-def get_books():
-    return jsonify({"books": books})
 
-@app.route('/api/books/<int:book_id>', methods=['GET'])
-def get_book(book_id):
-    book = next((b for b in books if b['id'] == book_id), None)
-    if book:
-        return jsonify(book)
-    return jsonify({"error": "Book not found"}), 404
 
-@app.route('/api/books', methods=['POST'])
-def add_book():
-    data = request.get_json()
-    if not data or 'title' not in data or 'author' not in data:
-        return jsonify({"error": "Missing required fields"}), 400
+@app.route('/generate', methods=['POST'])
+def generate_endpoint():
+    try:
+        data = request.json
 
-    new_book = {
-        "id": len(books) + 1,
-        "title": data['title'],
-        "author": data['author']
-    }
-    books.append(new_book)
-    return jsonify(new_book), 201
+        # Validate request format
+        if not data or 'user_id' not in data or 'emotions' not in data:
+            return jsonify({"error": "Invalid request format"}), 400
 
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({"error": "Resource not found"}), 404
+        # Process request
+        result = {
+            "poem": generate_poem(data['emotions']),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "user_id": data['user_id']
+        }
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        app.logger.error(f"Analyze error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        "status": "OK",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "version": "1.0"
+    }), 200
+
 
 if __name__ == '__main__':
-    app.run(debug=os.getenv('FLASK_DEBUG', False))
+    load_dotenv()
+    port = int(os.getenv("NPB_POETRY_API_PORT", 5001))
+    app.run(host='0.0.0.0', port=port)

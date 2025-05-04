@@ -1,9 +1,10 @@
+import asyncio
 from typing import Optional
 
 from dotenv import load_dotenv
 from dataclasses import dataclass
 
-import requests
+import aiohttp
 import os
 
 
@@ -21,48 +22,55 @@ class EmotionAnalyzeResponseDto:
 
 
 class EmotionAPI:
-    def __init__(self):
+    def __init__(self, session: aiohttp.ClientSession = None):
         self.base_url = os.getenv("NPB_EMOTION_API_BASE_URL")
+        self.default_timeout = int(os.getenv("NPB_EMOTION_API_TIMEOUT", "5"))
+        self.session = session or aiohttp.ClientSession()
         self.health_timeout = 2
 
-    def analyze_emotions(self, request: EmotionAnalyzeRequestDto) -> Optional[EmotionAnalyzeResponseDto]:
-        """
-        Analyze emotions in text
-        Returns EmotionAnalyzeResponseDto if successful, None otherwise
-        """
+    async def analyze_emotions(self, request: EmotionAnalyzeRequestDto):
         try:
-            response = requests.post(
+            async with self.session.post(
                 f"{self.base_url}/analyze",
                 json={
                     "user_id": request.user_id,
                     "text": request.message
                 },
-                timeout=10
-            )
-            response.raise_for_status()
-
-            return EmotionAnalyzeResponseDto(
-                emotions=response.json()["emotions"]
-            )
-        except (requests.exceptions.RequestException, KeyError):
+                timeout=self.default_timeout
+            ) as response:
+                data = await response.json()
+                return EmotionAnalyzeResponseDto(emotions=data["emotions"])
+        except Exception as e:
             return None
 
-    def check_health(self) -> bool:
+    async def check_health(self) -> bool:
         """
         Check if Emotion API service is available
         Returns True if service responds successfully
         """
         try:
-            response = requests.get(
-                f"{self.base_url}/health",
-                timeout=2
-            )
-            return 200 <= response.status_code < 300
-        except requests.exceptions.RequestException:
+            async with self.session.get(
+                    f"{self.base_url}/health",
+                    timeout=self.health_timeout
+            ) as response:
+                return 200 <= response.status < 300
+        except Exception as e:
             return False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.session.close()
 
 
 if __name__ == '__main__':
-    load_dotenv()
-    available = EmotionAPI().check_health()
-    print(f"Emotion API is {"" if available else "un"}available")
+    async def main():
+        load_dotenv()
+        async with aiohttp.ClientSession() as session:
+            api = EmotionAPI(session)
+            available = await api.check_health()
+            print(f"Emotion API is {'available' if available else 'unavailable'}")
+
+
+    asyncio.run(main())

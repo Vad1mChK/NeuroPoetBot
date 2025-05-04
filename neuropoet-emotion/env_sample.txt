@@ -1,0 +1,2 @@
+# Create an .env file in neuropoet-emotion/ root directory
+NPB_EMOTION_API_PORT=5000

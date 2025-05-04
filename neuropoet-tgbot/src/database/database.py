@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -11,7 +12,7 @@ class User(Base):
     __tablename__ = 'users'
 
     user_id = Column(Integer, primary_key=True)
-    registered_at = Column(DateTime, default=datetime.utcnow)
+    registered_at = Column(DateTime, default=datetime.now)
 
     # Relationships
     emotions = relationship("EmotionAnalysis", back_populates="user")
@@ -23,7 +24,7 @@ class EmotionAnalysis(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.user_id'))
-    performed_at = Column(DateTime, default=datetime.utcnow)
+    performed_at = Column(DateTime, default=datetime.now)
     emotions = Column(JSON)  # Stores dict like {'happy': 0.8, 'sad': 0.2}
 
     # Relationships
@@ -35,7 +36,7 @@ class Generation(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.user_id'))
-    performed_at = Column(DateTime, default=datetime.utcnow)
+    performed_at = Column(DateTime, default=datetime.now)
     request_text = Column(String)
     response_text = Column(String)
 
@@ -55,8 +56,9 @@ class Database:
         """Add new user if not exists"""
         with self.Session() as session:
             if not session.get(User, user_id):
-                session.add(User(user_id=user_id))
+                session.add(User(user_id=user_id, registered_at=datetime.now()))
                 session.commit()
+
 
     def log_emotion_analysis(
             self,

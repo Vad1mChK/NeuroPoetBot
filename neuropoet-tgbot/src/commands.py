@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import re
 from typing import Callable
@@ -9,10 +10,12 @@ from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import ReactionTypeEmoji
 
+from api.emotion_api import EmotionAnalyzeRequestDto
+from api.poetry_api import PoetryGenerationRequestDto
 from util.emoji import Emoji
 from util.markdown import escape_markdown
 from util.telegram.restrictions import owner_only_command, get_owner_ids
-from globals import emotion_api, poetry_api, database
+from globals import get_global_state as gs
 
 ABOUT_FILE = Path(__file__).parent.parent / "res" / "about.md"
 
@@ -31,6 +34,8 @@ async def owner_only_permission_denied(message: types.Message):
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
+    database = await gs().get_database()
+    database.add_user(user_id=message.from_user.id)
     await message.answer("Hello!")
 
 
@@ -52,6 +57,106 @@ async def cmd_about(message: types.Message):
         await message.reply("ℹ️ Информация о боте временно недоступна")
 
 
+@router.message(Command("emotions"))
+async def cmd_emotions(message: types.Message):
+    try:
+        # Extract command text
+        command, *args = message.text.split(maxsplit=1)
+        text = args[0] if args else ""
+
+        if not text:
+            await message.reply("❌ Напишите текст после команды: /emotions <текст>")
+            return
+
+        # Get API instance from global state
+        api = await gs().get_emotion_api()
+
+        # Process request
+        request = EmotionAnalyzeRequestDto(
+            user_id=message.from_user.id,
+            message=text
+        )
+
+        response = await api.analyze_emotions(request)
+
+        print(response)
+
+        if response:
+            # Safe JSON formatting with markdown escaping
+            emotions_json = escape_markdown(json.dumps(response.emotions, indent=2, ensure_ascii=False))
+
+            database = await gs().get_database()
+            database.log_emotion_analysis(user_id=message.from_user.id, emotions=response.emotions)
+
+            await message.reply(
+                f"📊 Распознанные эмоции:\n```json\n{emotions_json}\n```",
+                parse_mode='MarkdownV2'
+            )
+        else:
+            await message.reply("❌ Сервис анализа эмоций недоступен")
+
+    except Exception as e:
+        logging.error(f"Emotion analysis error: {str(e)}", exc_info=True)
+        await message.reply("❌ Ошибка анализа эмоций")
+
+
+@router.message(Command("generate"))
+async def cmd_format(message: types.Message):
+    try:
+        # Extract command text
+        command, *args = message.text.split(maxsplit=1)
+        text = args[0] if args else ""
+
+        if not text:
+            await message.reply("❌ Напишите текст после команды: /generate <текст>")
+            return
+
+        # Get API instance from global state
+        emotion_api = await gs().get_emotion_api()
+        poetry_api = await gs().get_poetry_api()
+        database = await gs().get_database()
+
+        # Process request
+        emotion_request = EmotionAnalyzeRequestDto(
+            user_id=message.from_user.id,
+            message=text
+        )
+        emotion_response = await emotion_api.analyze_emotions(emotion_request)
+
+        if not emotion_response:
+            await message.reply("❌ Сервис анализа эмоций недоступен")
+            return
+
+        emotions = emotion_response.emotions
+        database.log_emotion_analysis(user_id=message.from_user.id, emotions=emotions)
+
+        poetry_request = PoetryGenerationRequestDto(
+            user_id=message.from_user.id,
+            emotions=emotions
+        )
+        poetry_response = await poetry_api.generate_poem(poetry_request)
+
+        if not poetry_response:
+            await message.reply("❌ Сервис генерации стихотворений недоступен")
+            return
+
+        poem = poetry_response.poem
+        database.log_generation(
+            user_id=message.from_user.id,
+            request_text=text,
+            response_text=poem
+        )
+
+        await message.reply(
+            f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}",
+            parse_mode='MarkdownV2'
+        )
+
+    except Exception as e:
+        logging.error(f"Poem generation error: {str(e)}", exc_info=True)
+        await message.reply("❌ Ошибка генерации стихотворения")
+
+
 @router.message(Command("history"))
 async def cmd_history(message: types.Message):
     try:
@@ -64,7 +169,7 @@ async def cmd_history(message: types.Message):
             limit = min(int(args[0]), 20)  # Максимум 20 записей
 
         # Получаем историю из базы данных
-        history = database.get_user_history(user_id=user_id, limit=limit)
+        history = (await gs().get_database()).get_user_history(user_id=user_id, limit=limit)
 
         # Форматируем сообщение
         response = []
@@ -77,12 +182,13 @@ async def cmd_history(message: types.Message):
             response.append("*📊 Последние анализы эмоций:*")
             for idx, emotion in enumerate(history['emotions'], 1):
                 date = emotion.performed_at.strftime("%d.%m.%Y %H:%M")
-                emotions = ", ".join(
-                    escape_markdown(f"{k}: {v:.2f}") for k, v in emotion.emotions.items()
-                )
+                print(emotion.emotions.items())
+                top_emotion = max(emotion.emotions.items(), key=lambda x: x[1])
+                top_emotion_str = f"{top_emotion[0]} ({top_emotion[1]})"
                 response.append(
                     f"{idx}\\. *{escape_markdown(date)}*\n"
-                    f"Эмоции: {escape_markdown(emotions)}"
+                    f"*Преобладает эмоция*: {escape_markdown(top_emotion_str)}"
+                    # f"*Эмоции*: ```json\n{json.dumps(emotion.emotions)}\n```"
                 )
 
         # Форматируем генерации
@@ -92,13 +198,13 @@ async def cmd_history(message: types.Message):
                 date = gen.performed_at.strftime("%d.%m.%Y %H:%M")
                 response.append(
                     f"{idx}\\. *{escape_markdown(date)}*\n"
-                    f"Запрос: {escape_markdown(gen.request_text)}\n"
-                    f"Ответ: {escape_markdown(gen.response_text)}"
+                    f"*Запрос*: {escape_markdown(gen.request_text)}\n"
+                    f"*Ответ*: {escape_markdown(gen.response_text)}"
                 )
 
         # Отправляем сообщение
         await message.reply(
-            text="\n\n".join(response),
+            text="\n".join(response),
             parse_mode="MarkdownV2"
         )
 
@@ -153,9 +259,9 @@ async def cmd_health(message: types.Message):
         await asyncio.gather(*[
             check_service(name, service.check_health)
             for name, service in {
-                'emotion': emotion_api,
-                'poetry': poetry_api,
-                'database': database
+                'emotion': await gs().get_emotion_api(),
+                'poetry': await gs().get_poetry_api(),
+                'database': await gs().get_database()
             }.items()
         ])
 
