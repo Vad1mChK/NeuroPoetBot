@@ -110,6 +110,14 @@ class Database:
                 .all()
             }
 
+    def get_user_data(self, user_id: int) -> User | None:
+        with (self.Session() as session):
+            return (
+                session.query(User)
+                .filter_by(user_id=user_id)
+                .first()
+            )
+
     def check_health(self) -> bool:
         """Simple database health check"""
         try:

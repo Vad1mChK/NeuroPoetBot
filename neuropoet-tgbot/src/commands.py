@@ -212,6 +212,58 @@ async def cmd_history(message: types.Message):
         logging.error(f"History error: {str(e)}")
         await message.reply("❌ Не удалось загрузить историю")
 
+@router.message(Command("stats"))
+async def cmd_stats(message: types.Message):
+    try:
+        # Получаем данные
+        db = await gs().get_database()
+        user_data = db.get_user_data(message.from_user.id)
+
+        # Форматируем дату регистрации
+        join_date = user_data.registered_at.strftime("%d.%m.%Y %H:%M") if user_data else "неизвестно"
+
+        # Получаем и агрегируем эмоции
+        emotions = {}
+        history = db.get_user_history(message.from_user.id)
+
+        if history['emotions']:
+            # Собираем средние значения
+            counter = {}
+            for record in history['emotions']:
+                for emotion, score in record.emotions.items():
+                    emotions[emotion] = emotions.get(emotion, 0) + score
+                    counter[emotion] = counter.get(emotion, 0) + 1
+
+            # Вычисляем среднее и форматируем
+            emotions_avg = {
+                emo: total / counter[emo]
+                for emo, total in emotions.items()
+            }
+            emotions_text = "\n".join(
+                f"{emo}: {val:.2f}"
+                for emo, val in sorted(emotions_avg.items(), key=lambda x: -x[1])
+            )
+        else:
+            emotions_text = "Нет данных об эмоциях"
+
+        # Формируем ответ
+        response = (
+            f"👤 *{escape_markdown(message.from_user.full_name)}* "
+            f"\\(aka @{escape_markdown(message.from_user.username)}, `{message.from_user.id}`\\)\n"
+            f"📊 *Ваша статистика*\n\n"
+            f"🕐 Дата регистрации: {escape_markdown(join_date)}\n"
+            f"📈 Средние эмоции:\n{escape_markdown(emotions_text)}"
+        )
+
+        await message.reply(
+            text=response,
+            parse_mode="MarkdownV2",
+            disable_web_page_preview=True
+        )
+
+    except Exception as e:
+        logging.error(f"Stats error: {str(e)}", exc_info=True)
+        await message.reply("❌ Не удалось загрузить статистику")
 
 @router.message(Command("health"))
 async def cmd_health(message: types.Message):
