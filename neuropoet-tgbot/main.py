@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import requests
 
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import ReactionTypeEmoji
