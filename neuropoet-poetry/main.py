@@ -7,10 +7,8 @@ from dotenv import load_dotenv
 app = Flask(__name__)
 
 
-# Mock emotion detector - replace with actual ML model
 def generate_poem(emotions: dict[str, float]) -> str:
-    """Returns mock emotion scores for demonstration"""
-    words = ['chicken', 'jockey', 'Steve', 'crafting', 'table', 'flint', 'steel']
+    words = 'I am Steve this is a crafting table big ol\' red ones chicken jockey flint and steel ender pearl'.split()
     return '\n'.join(
         [' '.join(
             [random.choice(words) for _ in range(10)]
@@ -18,7 +16,6 @@ def generate_poem(emotions: dict[str, float]) -> str:
             for _ in range(4)
         ]
     )
-
 
 
 @app.route('/generate', methods=['POST'])

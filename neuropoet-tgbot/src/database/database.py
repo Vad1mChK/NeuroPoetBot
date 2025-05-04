@@ -1,6 +1,7 @@
 import json
+import random
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from typing import Optional, List, Dict
@@ -117,6 +118,28 @@ class Database:
                 .filter_by(user_id=user_id)
                 .first()
             )
+
+    def get_all_poems(self, limit: int = 100) -> list[str]:
+        with self.Session() as session:
+            generations = (
+                session.query(Generation)
+                .limit(limit)
+                .all()
+            )
+            return [generation.response_text for generation in generations]
+
+    def get_random_poem_fast(self) -> str | None:
+        with self.Session() as session:
+            max_id = session.query(func.max(Generation.id)).scalar()
+            random_id = random.randint(1, max_id)
+            return (
+                session.query(Generation)
+                .filter(Generation.id >= random_id)
+                .limit(1)
+                .scalar()
+                .response_text
+            )
+
 
     def check_health(self) -> bool:
         """Simple database health check"""

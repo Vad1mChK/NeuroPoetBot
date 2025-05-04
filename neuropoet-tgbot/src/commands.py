@@ -18,6 +18,9 @@ from util.telegram.restrictions import owner_only_command, get_owner_ids
 from globals import get_global_state as gs
 
 ABOUT_FILE = Path(__file__).parent.parent / "res" / "about.md"
+additional_command_list = {
+    'owners': 'Выводит список ID владельцев бота'
+}
 
 router = Router()
 bot: Bot = None
@@ -45,6 +48,12 @@ async def cmd_help(message: types.Message):
     command_list_formatted = '\n'.join(
         f'/{cmd.command}: {cmd.description}' for cmd in command_list
     )
+    if message.from_user.id in get_owner_ids():
+        command_list_formatted += '\nДополнительные команды для владельцев:\n'
+    command_list_formatted += '\n'.join(
+        f'/{cmd[0]}: {cmd[1]}' for cmd in additional_command_list.items()
+    )
+
     await message.answer(command_list_formatted)
 
 
@@ -326,42 +335,20 @@ async def cmd_health(message: types.Message):
         await message.react(reaction=[ReactionTypeEmoji(emoji=Emoji.WARNING.emoji)])
 
 
-@router.message(Command("user_data"))
-async def cmd_user_data(message: types.Message):
-    from random import random
-
-    emotion_dict = {
-        'happy': random(),
-        'sad': random(),
-        'anger': random(),
-        'fear': random(),
-        'surprise': random(),
-        'disgust': random(),
-    }
-
-    emotion_to_emoji = {
-        'happy': '😁',
-        'sad': '😢',
-        'anger': '😡',
-        'fear': '😱',
-        'surprise': '🤯',
-        'disgust': '🤮'
-    }
-
-    prevailing_emotion = max(emotion_dict, key=emotion_dict.get)
-
+@router.message(Command("random_poem"))
+async def cmd_random_poem(message: types.Message):
     try:
-        await message.react(
-            reaction=[ReactionTypeEmoji(emoji=emotion_to_emoji[prevailing_emotion])]
-        )
-    except TelegramBadRequest as e:
-        pass
+        database = await gs().get_database()
+        poem = database.get_random_poem_fast()
+        if poem is not None:
+            await message.reply(f"*Случайное стихотворение*:\n{escape_markdown(poem)}", parse_mode="MarkdownV2")
+        else:
+            await message.reply("❌ Не найдено ни одного стихотворения")
 
-    await message.answer(
-        f"You are {message.from_user}\n"
-        f"Emotions: {emotion_dict}\n"
-        f"Prevailing emotion: {emotion_to_emoji[prevailing_emotion]}{prevailing_emotion}"
-    )
+
+    except Exception as e:
+        logging.error(f"Stats error: {str(e)}", exc_info=True)
+        await message.reply("❌ Не удалось загрузить стихотворение")
 
 
 @router.message(Command("owners"))
