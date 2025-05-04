@@ -1,0 +1,7 @@
+# Create an .env file in neuropoet-tgbot/ root directory
+NPB_API_TOKEN=insert_your_tgbot_api_token_here
+NPB_EMOTION_API_BASE_URL=http://localhost:5000/
+NPB_EMOTION_API_TIMEOUT=5
+NPB_POETRY_API_BASE_URL=http://localhost:5001/
+NPB_POETRY_API_TIMEOUT=5
+NPB_OWNER_USER_IDS=123456789,123456790

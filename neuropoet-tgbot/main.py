@@ -1,8 +1,11 @@
 import asyncio
 import logging
 import os
+
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import ReactionTypeEmoji
 from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters.command import Command
 
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +31,38 @@ async def cmd_help(message: types.Message):
         (f'/{command.command}: {command.description}' for command in command_list)
     )
     await message.answer(command_list_formatted)
+
+
+@dp.message(Command("user_data"))
+async def on_msg(message: types.Message):
+    from random import random
+
+    emotion_dict = {
+        'happy': random(),
+        'sad': random(),
+        'anger': random(),
+        'fear': random(),
+        'surprise': random(),
+        'disgust': random(),
+    }
+
+    emotion_to_emoji = {
+        'happy': '😁',
+        'sad': '😢',
+        'anger': '😡',
+        'fear': '😱',
+        'surprise': '🤯',
+        'disgust': '🤮'
+    }
+
+    prevailing_emotion = sorted(emotion_dict.keys(), key=lambda k: -emotion_dict[k])[0]
+
+    await message.react(
+        reaction=[ReactionTypeEmoji(emoji=emotion_to_emoji[prevailing_emotion])]
+    )
+    await message.answer(f"Emotions: {
+        emotion_dict
+    }\nPrevailing emotion: {emotion_to_emoji[prevailing_emotion]}{prevailing_emotion}{emotion_to_emoji[prevailing_emotion]}")
 
 
 async def main():
