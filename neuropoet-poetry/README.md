@@ -33,12 +33,12 @@ Returns a poem written using one of the rhyming schemes:
 ## Usage
 ## Training
 1. Download the RIFMA dataset, and place it under `data/`. It should be named `rifma_dataset.json`.
-3. Launch `src/preprocessing/annotate_emotions_and_syllables.py`
-4. Launch `src/preprocessing/preprocess_additional_datasets.py`
-3. Launch `src/preprocessing/build_word_endings_dict.py`
-4. Launch `src/preprocessing/preprocess_for_gpt.py`
-5. Launch `src/training/train.py`
-6. The model should be saved under `models/rugpt3_finetuned/`
+2. Launch `src/preprocessing/annotate_emotions_and_syllables.py`
+3. Launch `src/preprocessing/preprocess_additional_datasets.py`
+4. Launch `src/preprocessing/build_word_endings_dict.py`
+5. Launch `src/preprocessing/preprocess_for_gpt.py`
+6. Launch `src/training/train.py`
+7. The model should be saved under `models/rugpt3_finetuned/`
 
 ## Generating
 Launch `main.py`. The generation should be accessible via web API (`POST /generate`)
