@@ -1,14 +1,13 @@
 import asyncio
 import json
 import logging
-import re
 from typing import Callable
 from pathlib import Path
 
 from aiogram import Router, types, Bot
 from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ReactionTypeEmoji
+from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from api.emotion_api import EmotionAnalyzeRequestDto
 from api.poetry_api import PoetryGenerationRequestDto
@@ -40,7 +39,27 @@ async def owner_only_permission_denied(message: types.Message):
 async def cmd_start(message: types.Message):
     database = await gs().get_database()
     database.add_user(user_id=message.from_user.id)
-    await message.answer("Hello!")
+    description = await bot.get_my_description()
+
+    start_text = (
+        f"👋 {escape_markdown(description.description)}\n"
+        "*С чего ты хотел бы начать*?"
+    )
+
+    # Define buttons explicitly corresponding to commands
+    command_buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🪪 О боте", callback_data="command:about")],
+        [InlineKeyboardButton(text="❔ Список доступных команд", callback_data="command:help")],
+        [InlineKeyboardButton(text="🎲 Случайное стихотворение", callback_data="command:random_poem")],
+        [InlineKeyboardButton(text="🗨 Оставить отзыв", callback_data="command:feedback")],
+        # Add other buttons if you have more commands
+    ])
+
+    await message.answer(
+        start_text,
+        parse_mode="MarkdownV2",
+        reply_markup=command_buttons
+    )
 
 
 @router.message(Command("help"))
@@ -78,7 +97,7 @@ async def cmd_emotions(message: types.Message):
             await message.reply("❌ Напишите текст после команды: /emotions <текст>")
             return
 
-        reply_message = await message.reply('⌛ Подождите, операция выполняется...')
+        reply_message = await message.reply('⌛ Выполняется анализ эмоций...')
 
         # Get API instance from global state
         api = await gs().get_emotion_api()
@@ -132,7 +151,7 @@ async def cmd_emotions(message: types.Message):
             except TelegramBadRequest as e:
                 print(e)
         else:
-            await reply_message.edit_text("❌ Сервис анализа эмоций недоступен")
+            await reply_message.edit_text("❌ Ошибка анализа эмоции")
 
     except Exception as e:
         logging.error(f"Emotion analysis error: {str(e)}", exc_info=True)
@@ -140,7 +159,7 @@ async def cmd_emotions(message: types.Message):
 
 
 @router.message(Command("generate"))
-async def cmd_format(message: types.Message):
+async def cmd_generate(message: types.Message):
     try:
         # Extract command text
         command, *args = message.text.split(maxsplit=1)
@@ -149,6 +168,8 @@ async def cmd_format(message: types.Message):
         if not text:
             await message.reply("❌ Напишите текст после команды: /generate <текст>")
             return
+
+        reply_message = await message.reply('⌛ Выполняется анализ эмоций...')
 
         # Get API instance from global state
         emotion_api = await gs().get_emotion_api()
@@ -163,11 +184,20 @@ async def cmd_format(message: types.Message):
         emotion_response = await emotion_api.analyze_emotions(emotion_request)
 
         if not emotion_response:
-            await message.reply("❌ Сервис анализа эмоций недоступен")
+            await reply_message.edit_text("❌ Ошибка при анализе эмоции")
             return
 
         emotions = emotion_response.emotions
         database.log_emotion_analysis(user_id=message.from_user.id, emotions=emotions)
+        top_emotion = max(emotions.keys(), key=lambda x: emotions.get(x, 0.0))
+        top_emotion_percentage = int(emotions.get(top_emotion, 0) * 100)
+
+        await reply_message.edit_text(
+            "📈 Анализ эмоций выполнен\n"
+            f"*Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
+            "⌛ Выполняется генерация стихотворения",
+            parse_mode="MarkdownV2"
+        )
 
         poetry_request = PoetryGenerationRequestDto(
             user_id=message.from_user.id,
@@ -176,19 +206,29 @@ async def cmd_format(message: types.Message):
         poetry_response = await poetry_api.generate_poem(poetry_request)
 
         if not poetry_response:
-            await message.reply("❌ Сервис генерации стихотворений недоступен")
+            await reply_message.edit_text("❌ Ошибка при генерации стихотворения")
             return
 
         poem = poetry_response.poem
-        database.log_generation(
+
+        generation_record = database.log_generation(
             user_id=message.from_user.id,
             request_text=text,
             response_text=poem
         )
+        # Explicitly define rating buttons
+        rating_buttons = InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(text=f"⭐{i}", callback_data=f"rating:{generation_record.id}:{i}")
+                for i in range(1, 6)
+            ]]
+        )
 
-        await message.reply(
+
+        await reply_message.edit_text(
             f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}",
-            parse_mode='MarkdownV2'
+            parse_mode='MarkdownV2',
+            reply_markup=rating_buttons
         )
 
     except Exception as e:
@@ -372,14 +412,39 @@ async def cmd_random_poem(message: types.Message):
     try:
         database = await gs().get_database()
         poem = database.get_random_poem_fast()
-        if poem is not None:
-            await message.reply(f"*Случайное стихотворение*:\n{escape_markdown(poem)}", parse_mode="MarkdownV2")
-        else:
-            await message.reply("❌ Не найдено ни одного стихотворения")
 
+        if poem is None:
+            await message.reply("❌ Не найдено ни одного стихотворения")
+            return
+
+        generation_id = poem.id  # Assume get_random_poem_fast returns the Generation object directly
+        user_id = message.from_user.id
+
+        # Check explicitly if user has rated the poem
+        user_already_rated = database.has_user_rated(user_id, generation_id)
+
+        # Get explicit average rating
+        avg_rating = poem.average_rating()
+        avg_rating_text = f"\n⭐ Средняя оценка: {avg_rating:.1f}/5" if avg_rating else ""
+
+        reply_markup = None
+        if not user_already_rated:
+            # Define explicit rating buttons
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"⭐{i}", callback_data=f"rating:{generation_id}:{i}")
+                for i in range(1, 6)
+            ]])
+
+        await message.reply(
+            f"*Случайное стихотворение*:\n"
+            f"{escape_markdown(poem.response_text)}"
+            f"{escape_markdown(avg_rating_text)}",
+            parse_mode="MarkdownV2",
+            reply_markup=reply_markup
+        )
 
     except Exception as e:
-        logging.error(f"Stats error: {str(e)}", exc_info=True)
+        logging.error(f"Random poem error: {str(e)}", exc_info=True)
         await message.reply("❌ Не удалось загрузить стихотворение")
 
 
@@ -396,3 +461,52 @@ async def cmd_owners(message: types.Message):
             f"Вы `{message.from_user.id}`",
         parse_mode='MarkdownV2'
     )
+
+
+# Explicitly handle rating callback
+@router.callback_query(lambda c: c.data.startswith('rating:'))
+async def rating_handler(callback: CallbackQuery):
+    database = await gs().get_database()
+
+    # Parse callback data explicitly
+    _, generation_id, rating_value = callback.data.split(":")
+    generation_id = int(generation_id)
+    rating_value = int(rating_value)
+    user_id = callback.from_user.id
+
+    # Check explicitly if user already rated
+    if database.has_user_rated(user_id, generation_id):
+        await callback.answer("❌ Вы уже оценили это стихотворение.", show_alert=True)
+        return
+
+    # Explicitly log the rating
+    database.rate_generation(user_id, generation_id, rating_value)
+
+    # Remove inline keyboard explicitly after rating
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer(f"Спасибо! Ваша оценка: ⭐{rating_value}", show_alert=False)
+
+
+@router.callback_query(lambda c: c.data.startswith('command:'))
+async def handle_command_buttons(callback: CallbackQuery):
+    command = callback.data.split(":", 1)[1]
+
+    if len(command) > 0:
+        new_message = callback.message.model_copy(update={
+            "text": command,
+            "from_user": callback.from_user
+        })
+
+        match command:
+            case "about":
+                await cmd_about(new_message)
+            case "help":
+                await cmd_help(new_message)
+            case "random_poem":
+                await cmd_random_poem(new_message)
+            case "feedback":
+                pass  # TODO
+            case _:
+                pass
+
+    await callback.answer()

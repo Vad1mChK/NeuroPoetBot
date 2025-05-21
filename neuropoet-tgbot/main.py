@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 
 import src.commands as commands
-from api.emotion_api import EmotionAPI
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
