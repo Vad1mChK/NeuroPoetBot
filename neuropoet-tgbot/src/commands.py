@@ -39,7 +39,27 @@ async def owner_only_permission_denied(message: types.Message):
 async def cmd_start(message: types.Message):
     database = await gs().get_database()
     database.add_user(user_id=message.from_user.id)
-    await message.answer("Hello!")
+    description = await bot.get_my_description()
+
+    start_text = (
+        f"👋 {escape_markdown(description.description)}\n"
+        "*С чего ты хотел бы начать*?"
+    )
+
+    # Define buttons explicitly corresponding to commands
+    command_buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🪪 О боте", callback_data="command:about")],
+        [InlineKeyboardButton(text="❔ Список доступных команд", callback_data="command:help")],
+        [InlineKeyboardButton(text="🎲 Случайное стихотворение", callback_data="command:random_poem")],
+        [InlineKeyboardButton(text="🗨 Оставить отзыв", callback_data="command:feedback")],
+        # Add other buttons if you have more commands
+    ])
+
+    await message.answer(
+        start_text,
+        parse_mode="MarkdownV2",
+        reply_markup=command_buttons
+    )
 
 
 @router.message(Command("help"))
@@ -465,3 +485,28 @@ async def rating_handler(callback: CallbackQuery):
     # Remove inline keyboard explicitly after rating
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer(f"Спасибо! Ваша оценка: ⭐{rating_value}", show_alert=False)
+
+
+@router.callback_query(lambda c: c.data.startswith('command:'))
+async def handle_command_buttons(callback: CallbackQuery):
+    command = callback.data.split(":", 1)[1]
+
+    if len(command) > 0:
+        new_message = callback.message.model_copy(update={
+            "text": command,
+            "from_user": callback.from_user
+        })
+
+        match command:
+            case "about":
+                await cmd_about(new_message)
+            case "help":
+                await cmd_help(new_message)
+            case "random_poem":
+                await cmd_random_poem(new_message)
+            case "feedback":
+                pass  # TODO
+            case _:
+                pass
+
+    await callback.answer()
