@@ -1,17 +1,32 @@
 from flask import Flask, request, jsonify
-from datetime import datetime, UTC
-import random
+from datetime import datetime
 import os
 from dotenv import load_dotenv
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch.nn.functional as F
+
 
 app = Flask(__name__)
 
+# Загрузка модели один раз при старте сервера
+MODEL_PATH = "rubert_emotion_cedr"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH).to(DEVICE)
+model.eval()
 
-# Mock emotion detector - replace with actual ML model
+EMOTION_LABELS = ['joy', 'sadness', 'surprise', 'fear', 'anger', 'neutral']
+
+
 def analyze_text(text: str) -> dict:
-    """Returns mock emotion scores for demonstration"""
-    emotions = ['happy', 'sad', 'anger', 'surprise', 'fear', 'disgust']
-    return {e: round(random.uniform(0, 1), 2) for e in emotions}
+    """Returns emotion scores"""
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True).to(DEVICE)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = F.softmax(outputs.logits, dim=1).squeeze().cpu().numpy()
+
+    return {label: round(float(prob), 4) for label, prob in zip(EMOTION_LABELS, probs)}
 
 
 @app.route('/analyze', methods=['POST'])
@@ -26,7 +41,7 @@ def analyze_endpoint():
         # Process request
         result = {
             "emotions": analyze_text(data['text']),
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),
             "user_id": data['user_id']
         }
 
@@ -41,7 +56,7 @@ def analyze_endpoint():
 def health_check():
     return jsonify({
         "status": "OK",
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0"
     }), 200
 
