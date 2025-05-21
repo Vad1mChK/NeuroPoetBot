@@ -2,6 +2,7 @@ Flask~=3.1.0
 dotenv~=0.9.9
 python-dotenv~=1.1.0
 numpy
+pandas
 torch
 transformers
 peft

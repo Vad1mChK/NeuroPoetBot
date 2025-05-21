@@ -8,6 +8,7 @@ from preprocessing_utils import (
     syllable_split,
     extract_rhyme_key
 )
+import pandas as pd
 
 emotion_classifier = pipeline(
     "text-classification",
@@ -33,7 +34,17 @@ for poem in rifma_data:
             if re.search('[́̀]', word):  # only words with stress marks
                 unique_accented_words.add(word)
 
+# Explicitly add words from nouns_processed.csv
+nouns_df = pd.read_csv("../../data/nouns_processed.csv")
+for word in nouns_df['accented']:
+    if isinstance(word, str) and re.search('[́̀]', word):
+        unique_accented_words.add(word.lower())
+
 print(f"Unique accented words collected: {len(unique_accented_words)}")
+
+# word_amount = 50_000
+# print(f"Truncating accented words to {word_amount}")
+# unique_accented_words = list(unique_accented_words)[:word_amount]
 
 for accented_word in tqdm(unique_accented_words):
     syllables = syllable_split(accented_word)
