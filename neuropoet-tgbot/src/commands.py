@@ -78,7 +78,7 @@ async def cmd_emotions(message: types.Message):
             await message.reply("❌ Напишите текст после команды: /emotions <текст>")
             return
 
-        reply_message = await message.reply('⌛ Подождите, операция выполняется...')
+        reply_message = await message.reply('⌛ Выполняется анализ эмоций...')
 
         # Get API instance from global state
         api = await gs().get_emotion_api()
@@ -132,7 +132,7 @@ async def cmd_emotions(message: types.Message):
             except TelegramBadRequest as e:
                 print(e)
         else:
-            await reply_message.edit_text("❌ Сервис анализа эмоций недоступен")
+            await reply_message.edit_text("❌ СОшибка анализа эмоции")
 
     except Exception as e:
         logging.error(f"Emotion analysis error: {str(e)}", exc_info=True)
@@ -140,7 +140,7 @@ async def cmd_emotions(message: types.Message):
 
 
 @router.message(Command("generate"))
-async def cmd_format(message: types.Message):
+async def cmd_generate(message: types.Message):
     try:
         # Extract command text
         command, *args = message.text.split(maxsplit=1)
@@ -149,6 +149,8 @@ async def cmd_format(message: types.Message):
         if not text:
             await message.reply("❌ Напишите текст после команды: /generate <текст>")
             return
+
+        reply_message = await message.reply('⌛ Выполняется анализ эмоций...')
 
         # Get API instance from global state
         emotion_api = await gs().get_emotion_api()
@@ -163,11 +165,20 @@ async def cmd_format(message: types.Message):
         emotion_response = await emotion_api.analyze_emotions(emotion_request)
 
         if not emotion_response:
-            await message.reply("❌ Сервис анализа эмоций недоступен")
+            await reply_message.edit_text("❌ Ошибка при анализе эмоции")
             return
 
         emotions = emotion_response.emotions
         database.log_emotion_analysis(user_id=message.from_user.id, emotions=emotions)
+        top_emotion = max(emotions.keys(), key=lambda x: emotions.get(x, 0.0))
+        top_emotion_percentage = int(emotions.get(top_emotion, 0) * 100)
+
+        await reply_message.edit_text(
+            "📈 Анализ эмоций выполнен\n"
+            f"*Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
+            "⌛ Выполняется генерация стихотворения",
+            parse_mode="MarkdownV2"
+        )
 
         poetry_request = PoetryGenerationRequestDto(
             user_id=message.from_user.id,
@@ -176,7 +187,7 @@ async def cmd_format(message: types.Message):
         poetry_response = await poetry_api.generate_poem(poetry_request)
 
         if not poetry_response:
-            await message.reply("❌ Сервис генерации стихотворений недоступен")
+            await reply_message.edit_text("❌ Ошибка при генерации стихотворения")
             return
 
         poem = poetry_response.poem
@@ -186,7 +197,7 @@ async def cmd_format(message: types.Message):
             response_text=poem
         )
 
-        await message.reply(
+        await reply_message.edit_text(
             f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}",
             parse_mode='MarkdownV2'
         )
