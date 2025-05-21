@@ -10,7 +10,7 @@ import torch.nn.functional as F
 app = Flask(__name__)
 
 # Загрузка модели один раз при старте сервера
-MODEL_PATH = "rubert_emotion_cedr"
+MODEL_PATH = "rubert_emotion_cedr_neutral"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH).to(DEVICE)
