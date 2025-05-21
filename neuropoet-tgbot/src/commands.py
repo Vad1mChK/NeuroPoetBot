@@ -15,6 +15,7 @@ from api.poetry_api import PoetryGenerationRequestDto
 from util.emoji import Emoji
 from util.markdown import escape_markdown
 from util.telegram.restrictions import owner_only_command, get_owner_ids
+from util.text import truncate_text
 from globals import get_global_state as gs
 
 ABOUT_FILE = Path(__file__).parent.parent / "res" / "about.md"
@@ -77,6 +78,8 @@ async def cmd_emotions(message: types.Message):
             await message.reply("❌ Напишите текст после команды: /emotions <текст>")
             return
 
+        reply_message = await message.reply('⌛ Подождите, операция выполняется...')
+
         # Get API instance from global state
         api = await gs().get_emotion_api()
 
@@ -97,12 +100,39 @@ async def cmd_emotions(message: types.Message):
             database = await gs().get_database()
             database.log_emotion_analysis(user_id=message.from_user.id, emotions=response.emotions)
 
-            await message.reply(
-                f"📊 Распознанные эмоции:\n```json\n{emotions_json}\n```",
+            top_emotion = max(
+                response.emotions.keys(),
+                key=lambda x: response.emotions.get(x, 0.0)
+            ) or "no_emotion"
+            top_emotion_percentage = int(response.emotions.get(top_emotion, 0) * 100)
+            emojis: dict[str, Emoji] = {
+                "joy": Emoji.BIG_SMILE,
+                "sad": Emoji.TEAR,
+                "sadness": Emoji.TEAR,
+                "fear": Emoji.FEAR,
+                "anger": Emoji.ANGER,
+                "surprise": Emoji.SURPRISE,
+                "disgust": Emoji.DISGUST,
+                "neutral": Emoji.NEUTRAL,
+                "no_emotion": Emoji.NEUTRAL,
+            }
+            top_emoji = emojis.get(top_emotion, Emoji.NEUTRAL).emoji
+            await reply_message.edit_text(
+                (
+                    f"📊 Распознанные эмоции:\n```json\n{emotions_json}\n```\n"
+                    f"🥇 Топовая эмоция: {top_emoji}{top_emotion}{top_emoji} \\({top_emotion_percentage}%\\)"
+                ),
                 parse_mode='MarkdownV2'
             )
+
+            try:
+                await message.react(
+                    reaction=[ReactionTypeEmoji(emoji=top_emoji)]
+                )
+            except TelegramBadRequest as e:
+                print(e)
         else:
-            await message.reply("❌ Сервис анализа эмоций недоступен")
+            await reply_message.edit_text("❌ Сервис анализа эмоций недоступен")
 
     except Exception as e:
         logging.error(f"Emotion analysis error: {str(e)}", exc_info=True)
@@ -208,7 +238,9 @@ async def cmd_history(message: types.Message):
                 response.append(
                     f"{idx}\\. *{escape_markdown(date)}*\n"
                     f"*Запрос*: {escape_markdown(gen.request_text)}\n"
-                    f"*Ответ*: {escape_markdown(gen.response_text)}"
+                    f"*Ответ*: {escape_markdown(
+                        truncate_text(gen.response_text)
+                    )}"
                 )
 
         # Отправляем сообщение
