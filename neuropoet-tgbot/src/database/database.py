@@ -2,7 +2,7 @@ import json
 import random
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker, joinedload
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from typing import Optional, List, Dict
 
@@ -32,6 +32,15 @@ class EmotionAnalysis(Base):
     user = relationship("User", back_populates="emotions")
 
 
+class GenerationRating(Base):
+    __tablename__ = 'generation_ratings'
+
+    id = Column(Integer, primary_key=True)
+    rater_id = Column(Integer, ForeignKey('users.user_id'))
+    generation_id = Column(Integer, ForeignKey('generations.id'))
+    rating = Column(Integer, nullable=False)  # rating from 1 to 5
+
+
 class Generation(Base):
     __tablename__ = 'generations'
 
@@ -43,6 +52,12 @@ class Generation(Base):
 
     # Relationships
     user = relationship("User", back_populates="generations")
+    ratings = relationship("GenerationRating", backref="generation")
+
+    def average_rating(self) -> Optional[float]:
+        if self.ratings and len(self.ratings) > 0:
+            return sum(r.rating for r in self.ratings) / len(self.ratings)
+        return None
 
 
 class Database:
@@ -59,7 +74,6 @@ class Database:
             if not session.get(User, user_id):
                 session.add(User(user_id=user_id, registered_at=datetime.now()))
                 session.commit()
-
 
     def log_emotion_analysis(
             self,
@@ -80,16 +94,21 @@ class Database:
             user_id: int,
             request_text: str,
             response_text: str
-    ) -> None:
-        """Log poetry generation result"""
+    ) -> Generation:
+        """Log poetry generation result and explicitly return the Generation object"""
         with self.Session() as session:
             self.add_user(user_id)  # Ensure user exists
-            session.add(Generation(
+
+            generation = Generation(
                 user_id=user_id,
                 request_text=request_text,
                 response_text=response_text
-            ))
+            )
+            session.add(generation)
             session.commit()
+
+            session.refresh(generation)  # Explicitly refresh object to get generated ID
+            return generation
 
     def get_user_history(
             self,
@@ -111,6 +130,29 @@ class Database:
                 .all()
             }
 
+    def rate_generation(
+        self, rater_id: int, generation_id: int, rating: int
+    ) -> None:
+        """Explicitly rate a generation"""
+        with self.Session() as session:
+            existing_rating = session.query(GenerationRating).filter_by(
+                rater_id=rater_id, generation_id=generation_id
+            ).first()
+            if existing_rating is None:
+                session.add(GenerationRating(
+                    rater_id=rater_id,
+                    generation_id=generation_id,
+                    rating=rating
+                ))
+                session.commit()
+
+    def has_user_rated(self, rater_id: int, generation_id: int) -> bool:
+        """Explicitly check if user already rated generation"""
+        with self.Session() as session:
+            return session.query(GenerationRating).filter_by(
+                rater_id=rater_id, generation_id=generation_id
+            ).first() is not None
+
     def get_user_data(self, user_id: int) -> User | None:
         with (self.Session() as session):
             return (
@@ -128,18 +170,24 @@ class Database:
             )
             return [generation.response_text for generation in generations]
 
-    def get_random_poem_fast(self) -> str | None:
+    def get_random_poem_fast(self) -> Generation | None:
         with self.Session() as session:
             max_id = session.query(func.max(Generation.id)).scalar()
+            if not max_id:
+                return None
+
             random_id = random.randint(1, max_id)
-            return (
+
+            generation = (
                 session.query(Generation)
+                .options(joinedload(Generation.ratings))  # Explicitly eager load ratings
                 .filter(Generation.id >= random_id)
+                .order_by(Generation.id)
                 .limit(1)
-                .scalar()
-                .response_text
+                .first()
             )
 
+            return generation
 
     def check_health(self) -> bool:
         """Simple database health check"""

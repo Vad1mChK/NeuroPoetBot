@@ -1,14 +1,13 @@
 import asyncio
 import json
 import logging
-import re
 from typing import Callable
 from pathlib import Path
 
 from aiogram import Router, types, Bot
 from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ReactionTypeEmoji
+from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from api.emotion_api import EmotionAnalyzeRequestDto
 from api.poetry_api import PoetryGenerationRequestDto
@@ -132,7 +131,7 @@ async def cmd_emotions(message: types.Message):
             except TelegramBadRequest as e:
                 print(e)
         else:
-            await reply_message.edit_text("❌ СОшибка анализа эмоции")
+            await reply_message.edit_text("❌ Ошибка анализа эмоции")
 
     except Exception as e:
         logging.error(f"Emotion analysis error: {str(e)}", exc_info=True)
@@ -191,15 +190,25 @@ async def cmd_generate(message: types.Message):
             return
 
         poem = poetry_response.poem
-        database.log_generation(
+
+        generation_record = database.log_generation(
             user_id=message.from_user.id,
             request_text=text,
             response_text=poem
         )
+        # Explicitly define rating buttons
+        rating_buttons = InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(text=f"⭐{i}", callback_data=f"rating:{generation_record.id}:{i}")
+                for i in range(1, 6)
+            ]]
+        )
+
 
         await reply_message.edit_text(
             f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}",
-            parse_mode='MarkdownV2'
+            parse_mode='MarkdownV2',
+            reply_markup=rating_buttons
         )
 
     except Exception as e:
@@ -383,14 +392,39 @@ async def cmd_random_poem(message: types.Message):
     try:
         database = await gs().get_database()
         poem = database.get_random_poem_fast()
-        if poem is not None:
-            await message.reply(f"*Случайное стихотворение*:\n{escape_markdown(poem)}", parse_mode="MarkdownV2")
-        else:
-            await message.reply("❌ Не найдено ни одного стихотворения")
 
+        if poem is None:
+            await message.reply("❌ Не найдено ни одного стихотворения")
+            return
+
+        generation_id = poem.id  # Assume get_random_poem_fast returns the Generation object directly
+        user_id = message.from_user.id
+
+        # Check explicitly if user has rated the poem
+        user_already_rated = database.has_user_rated(user_id, generation_id)
+
+        # Get explicit average rating
+        avg_rating = poem.average_rating()
+        avg_rating_text = f"\n⭐ Средняя оценка: {avg_rating:.1f}/5" if avg_rating else ""
+
+        reply_markup = None
+        if not user_already_rated:
+            # Define explicit rating buttons
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"⭐{i}", callback_data=f"rating:{generation_id}:{i}")
+                for i in range(1, 6)
+            ]])
+
+        await message.reply(
+            f"*Случайное стихотворение*:\n"
+            f"{escape_markdown(poem.response_text)}"
+            f"{escape_markdown(avg_rating_text)}",
+            parse_mode="MarkdownV2",
+            reply_markup=reply_markup
+        )
 
     except Exception as e:
-        logging.error(f"Stats error: {str(e)}", exc_info=True)
+        logging.error(f"Random poem error: {str(e)}", exc_info=True)
         await message.reply("❌ Не удалось загрузить стихотворение")
 
 
@@ -407,3 +441,27 @@ async def cmd_owners(message: types.Message):
             f"Вы `{message.from_user.id}`",
         parse_mode='MarkdownV2'
     )
+
+
+# Explicitly handle rating callback
+@router.callback_query(lambda c: c.data.startswith('rating:'))
+async def rating_handler(callback: CallbackQuery):
+    database = await gs().get_database()
+
+    # Parse callback data explicitly
+    _, generation_id, rating_value = callback.data.split(":")
+    generation_id = int(generation_id)
+    rating_value = int(rating_value)
+    user_id = callback.from_user.id
+
+    # Check explicitly if user already rated
+    if database.has_user_rated(user_id, generation_id):
+        await callback.answer("❌ Вы уже оценили это стихотворение.", show_alert=True)
+        return
+
+    # Explicitly log the rating
+    database.rate_generation(user_id, generation_id, rating_value)
+
+    # Remove inline keyboard explicitly after rating
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer(f"Спасибо! Ваша оценка: ⭐{rating_value}", show_alert=False)
