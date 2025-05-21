@@ -9,7 +9,7 @@ from src.inference.postprocessing import RhymeScheme
 app = Flask(__name__)
 generator = EmotionPoetryGenerator()
 
-def generate_poem(emotions: dict[str, float], rhyme_scheme: RhymeScheme) -> str:
+def generate_poem(emotions: dict[str, float], rhyme_scheme: RhymeScheme = RhymeScheme.ABBA) -> str:
     global generator
 
     emotions.setdefault("no_emotion", emotions.get("neutral", 0.0))
@@ -33,8 +33,8 @@ def generate_endpoint():
         rhyme_scheme = random.choice([rs for rs in RhymeScheme])
         # Process request
         result = {
-            "poem": generate_poem(data['emotions']),
-            "rhyme_scheme": rhyme_scheme,
+            "poem": generate_poem(data['emotions'], rhyme_scheme=rhyme_scheme),
+            "rhyme_scheme": rhyme_scheme.value,
             "timestamp": datetime.now(UTC).isoformat(),
             "user_id": data['user_id']
         }

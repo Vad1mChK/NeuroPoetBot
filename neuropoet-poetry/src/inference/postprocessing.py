@@ -136,7 +136,7 @@ class PoemPostprocessor:
         return lines
 
     @staticmethod
-    def split_long_lines(lines: list[str], max_syllables: int = 12) -> list[str]:
+    def split_long_lines(lines: list[str], max_syllables: int = 10) -> list[str]:
         """Explicitly splits lines exceeding max syllables at punctuation."""
         punctuation_pattern = re.compile(r'[,;:—–…]')
         new_lines = []
