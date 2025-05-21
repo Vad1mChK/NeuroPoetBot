@@ -34,6 +34,13 @@ class Emoji(Enum, metaclass=EmojiTypeMeta):
     THUMBS_UP = EmojiEntry('👍', reaction_supported=True)
     THUMBS_DOWN = EmojiEntry('👎', reaction_supported=True)
     THINK = EmojiEntry('🤔', reaction_supported=True)
+    BIG_SMILE = EmojiEntry('😁', reaction_supported=True)
+    TEAR = EmojiEntry('😢', reaction_supported=True)
+    FEAR = EmojiEntry('😱', reaction_supported=True)
+    SURPRISE = EmojiEntry('🤯', reaction_supported=True)
+    DISGUST = EmojiEntry('🤮', reaction_supported=True)
+    ANGER = EmojiEntry('😡', reaction_supported=True)
+    NEUTRAL = EmojiEntry('😐', reaction_supported=True)
 
     @property
     def emoji(self) -> str:
