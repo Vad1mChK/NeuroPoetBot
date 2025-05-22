@@ -1,6 +1,8 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
+
+from preprocessing.preprocessing_utils import emotion_dict_to_russian_str
 from .postprocessing import RhymeScheme, PoemPostprocessor
 
 import os
@@ -27,7 +29,7 @@ class EmotionPoetryGenerator:
             do_postprocess: bool = True,
             max_length: int = 256
     ):
-        emotions_text = ", ".join(f"{k}={v:.2f}" for k, v in emotion_dict.items())
+        emotions_text = emotion_dict_to_russian_str(emotion_dict)
         prompt = (
             f"Эмоции: {emotions_text}\n"
             f"Рифма: {rhyme_scheme.value}\n"
@@ -54,12 +56,9 @@ class EmotionPoetryGenerator:
 
         poem = generated_text.split("[СТИХ]")[-1].strip()
         if self.postprocessor is not None and do_postprocess:
-            postprocessed_lines = [
-                    line
-                    for line in poem.split("\n")
-                    if len(line) > 0 and not line.isspace()
-                ]
+            postprocessed_lines = poem.split("\n")
             postprocessed_lines = self.postprocessor.strip_line_numbers(postprocessed_lines)
+            postprocessed_lines = self.postprocessor.remove_blank_lines(postprocessed_lines)
             postprocessed_lines = self.postprocessor.split_long_lines(postprocessed_lines)
             postprocessed_lines = self.postprocessor.enforce_rhyme_scheme(
                 postprocessed_lines,

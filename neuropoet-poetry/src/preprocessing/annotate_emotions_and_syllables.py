@@ -6,7 +6,7 @@ from preprocessing_utils import (
     line_syllable_count,
     extract_rhyme_key,
     line_syllable_split,
-    remove_accents
+    remove_accents, impute_rhyme_scheme
 )
 
 if __name__ == "__main__":
@@ -25,6 +25,14 @@ if __name__ == "__main__":
     annotated_data = []
 
     for entry in tqdm(rifma_data):
+        rhyme_scheme = entry.get("rhyme_scheme", "")
+        if not rhyme_scheme or (
+                len(rhyme_scheme) <= 3 and all(ch == '-' for ch in rhyme_scheme.replace(' ', ''))
+        ):
+            continue
+        if (imputed_rhyme_scheme := impute_rhyme_scheme(rhyme_scheme)) is None:
+            continue
+
         poem = entry["poem_text"]
         accented_poem = entry["accentuation_markup"]
 
@@ -54,7 +62,7 @@ if __name__ == "__main__":
         annotated_entry = {
             "poem_text": poem,
             "accentuation_markup": accented_poem,
-            "rhyme_scheme": entry.get("rhyme_scheme", ""),
+            "rhyme_scheme": imputed_rhyme_scheme,
             "emotions": emotion_dict,
             "lines": line_annotations
         }

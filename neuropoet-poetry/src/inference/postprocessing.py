@@ -16,7 +16,7 @@ class RhymeScheme(Enum):
     ABAB = "ABAB"
     ABBA = "ABBA"
     AABB = "AABB"
-    ABCB = "ABCB"
+    BACA = "BACA"
 
 
 class PoemPostprocessor:
@@ -35,6 +35,15 @@ class PoemPostprocessor:
         return [
             re.sub(line_number_regex, "", line)
             for line in lines
+        ]
+
+    @staticmethod
+    def remove_blank_lines(lines: list[str]) -> list[str]:
+        blank_lines_regex = re.compile(r'^\s*$')  # Matches blank or whitespace-only lines explicitly
+        return [
+            line
+            for line in lines
+            if not blank_lines_regex.match(line)  # Explicitly keeps non-blank lines
         ]
 
     @staticmethod
@@ -113,6 +122,9 @@ class PoemPostprocessor:
 
                 for idx in indices[1:]:
                     original_line = poem_lines[idx]
+                    if extract_rhyme_key(original_line) == rhyme_key:
+                        continue
+
                     chosen_word = self.choose_word_top_p(candidates, poem_emotion)
 
                     # Prevent repeated substitutions

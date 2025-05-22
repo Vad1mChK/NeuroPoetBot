@@ -1,6 +1,8 @@
 import json
 from tqdm import tqdm
 
+from preprocessing.preprocessing_utils import emotion_dict_to_russian_str
+
 # Load annotated dataset
 with open("../../data/rifma_annotated.json", "r", encoding="utf-8") as f:
     rifma_annotated = json.load(f)
@@ -11,7 +13,7 @@ for poem_entry in tqdm(rifma_annotated):
     emotions = poem_entry['emotions']
     rhyme_scheme = poem_entry.get('rhyme_scheme', '')
 
-    emotion_prompt = ', '.join(f'{emo}={score:.2f}' for emo, score in emotions.items())
+    emotion_prompt = emotion_dict_to_russian_str(emotions)
 
     line_prompts = []
     for idx, line_info in enumerate(poem_entry['lines'], start=1):
