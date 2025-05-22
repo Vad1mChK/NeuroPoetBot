@@ -7,7 +7,8 @@ from pathlib import Path
 from aiogram import Router, types, Bot
 from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, \
+    BufferedInputFile
 
 from .api.emotion_api import EmotionAnalyzeRequestDto
 from .api.poetry_api import PoetryGenerationRequestDto
@@ -19,7 +20,9 @@ from .globals import get_global_state as gs
 
 ABOUT_FILE = Path(__file__).parent.parent / "res" / "about.md"
 additional_command_list = {
-    'owners': 'Выводит список ID владельцев бота'
+    'owners': 'Выводит список ID владельцев бота',
+    'get_feedback': 'Выводит статистику по обратной связи',
+    'export_feedback': 'Экспортирует отзывы о боте в JSON',
 }
 
 router = Router()
@@ -346,6 +349,61 @@ async def cmd_stats(message: types.Message):
         logging.error(f"Stats error: {str(e)}", exc_info=True)
         await message.reply("❌ Не удалось загрузить статистику")
 
+
+@router.message(Command("random_poem"))
+async def cmd_random_poem(message: types.Message):
+    try:
+        database = await gs().get_database()
+        poem = database.get_random_poem_fast()
+
+        if poem is None:
+            await message.reply("❌ Не найдено ни одного стихотворения")
+            return
+
+        generation_id = poem.id  # Assume get_random_poem_fast returns the Generation object directly
+        user_id = message.from_user.id
+
+        # Check explicitly if user has rated the poem
+        user_already_rated = database.has_user_rated(user_id, generation_id)
+
+        # Get explicit average rating
+        avg_rating = poem.average_rating()
+        avg_rating_text = f"\n⭐ Средняя оценка: {avg_rating:.1f}/5" if avg_rating else ""
+
+        reply_markup = None
+        if not user_already_rated:
+            # Define explicit rating buttons
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text=f"⭐{i}", callback_data=f"rating:{generation_id}:{i}")
+                for i in range(1, 6)
+            ]])
+
+        await message.reply(
+            f"*Случайное стихотворение*:\n"
+            f"{escape_markdown(poem.response_text)}"
+            f"{escape_markdown(avg_rating_text)}",
+            parse_mode="MarkdownV2",
+            reply_markup=reply_markup
+        )
+
+    except Exception as e:
+        logging.error(f"Random poem error: {str(e)}", exc_info=True)
+        await message.reply("❌ Не удалось загрузить стихотворение")
+
+@router.message(Command("feedback"))
+async def cmd_feedback(message: types.Message):
+    star_buttons = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=f"⭐{i}",
+            callback_data=f"feedback:{i}"
+        ) for i in range(1, 6)
+    ]])
+
+    sent_msg = await message.reply(
+        "Пожалуйста, оцените бота:",
+        reply_markup=star_buttons
+    )
+
 @router.message(Command("health"))
 async def cmd_health(message: types.Message):
     sent_reply = await message.reply("🩺 Проверка статуса сервисов...")
@@ -407,47 +465,6 @@ async def cmd_health(message: types.Message):
         await message.react(reaction=[ReactionTypeEmoji(emoji=Emoji.WARNING.emoji)])
 
 
-@router.message(Command("random_poem"))
-async def cmd_random_poem(message: types.Message):
-    try:
-        database = await gs().get_database()
-        poem = database.get_random_poem_fast()
-
-        if poem is None:
-            await message.reply("❌ Не найдено ни одного стихотворения")
-            return
-
-        generation_id = poem.id  # Assume get_random_poem_fast returns the Generation object directly
-        user_id = message.from_user.id
-
-        # Check explicitly if user has rated the poem
-        user_already_rated = database.has_user_rated(user_id, generation_id)
-
-        # Get explicit average rating
-        avg_rating = poem.average_rating()
-        avg_rating_text = f"\n⭐ Средняя оценка: {avg_rating:.1f}/5" if avg_rating else ""
-
-        reply_markup = None
-        if not user_already_rated:
-            # Define explicit rating buttons
-            reply_markup = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text=f"⭐{i}", callback_data=f"rating:{generation_id}:{i}")
-                for i in range(1, 6)
-            ]])
-
-        await message.reply(
-            f"*Случайное стихотворение*:\n"
-            f"{escape_markdown(poem.response_text)}"
-            f"{escape_markdown(avg_rating_text)}",
-            parse_mode="MarkdownV2",
-            reply_markup=reply_markup
-        )
-
-    except Exception as e:
-        logging.error(f"Random poem error: {str(e)}", exc_info=True)
-        await message.reply("❌ Не удалось загрузить стихотворение")
-
-
 @router.message(Command("owners"))
 @owner_only_command(default_action=owner_only_permission_denied)
 async def cmd_owners(message: types.Message):
@@ -460,6 +477,55 @@ async def cmd_owners(message: types.Message):
             f"Владельцы бота: {owners_string}\n" +
             f"Вы `{message.from_user.id}`",
         parse_mode='MarkdownV2'
+    )
+
+
+@router.message(Command("get_feedback"))
+@owner_only_command(default_action=owner_only_permission_denied)
+async def cmd_get_feedback(message: types.Message):
+    database = await gs().get_database()
+    summary = database.get_feedback_summary()
+
+    def format_feedback(title, feedback):
+        if feedback:
+            msg = feedback['message'] or "(нет комментария)"
+            return (
+                f"🔹 *{title}*\n"
+                f"Рейтинг: ⭐{feedback['rating']}\n"
+                f"Комментарий: _{escape_markdown(msg)}_\n"
+                f"Дата: {escape_markdown(feedback['created_at'])}\n"
+            )
+        else:
+            return f"🔹 *{title}*: Нет данных\n"
+
+    reply_text = (
+        f"📊 *Статистика отзывов:*\n"
+        f"Средний рейтинг: ⭐ {escape_markdown(str(summary['average_rating'])) or 'нет данных'}\n\n"
+        f"{format_feedback('Лучший отзыв', summary['best_feedback'])}\n"
+        f"{format_feedback('Худший отзыв', summary['worst_feedback'])}\n"
+        f"{format_feedback('Самый свежий отзыв', summary['newest_feedback'])}\n"
+        f"{format_feedback('Самый подробный отзыв', summary['longest_feedback'])}"
+    )
+
+    await message.reply(reply_text, parse_mode="MarkdownV2")
+
+
+@router.message(Command("export_feedback"))
+@owner_only_command(default_action=owner_only_permission_denied)
+async def cmd_export_feedback(message: types.Message):
+    database = await gs().get_database()
+
+    feedback_json = database.export_bot_feedback_json()
+    feedback_bytes = feedback_json.encode("utf-8")
+
+    file = BufferedInputFile(
+        file=feedback_bytes,
+        filename="bot_feedback.json"
+    )
+
+    await message.reply_document(
+        file,
+        caption="📝 Экспорт отзывов успешно создан."
     )
 
 
@@ -488,7 +554,7 @@ async def rating_handler(callback: CallbackQuery):
 
 
 @router.callback_query(lambda c: c.data.startswith('command:'))
-async def handle_command_buttons(callback: CallbackQuery):
+async def handle_command_buttons_for_start(callback: CallbackQuery):
     command = callback.data.split(":", 1)[1]
 
     if len(command) > 0:
@@ -510,3 +576,43 @@ async def handle_command_buttons(callback: CallbackQuery):
                 pass
 
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("feedback:"))
+async def handle_feedback_rating(callback: CallbackQuery):
+    rating = int(callback.data.split(":")[1])
+    bot_msg_id = callback.message.message_id
+
+    # Log feedback explicitly now, with empty message:
+    database = await gs().get_database()
+    database.log_bot_feedback(
+        user_id=callback.from_user.id,
+        rating=rating,
+        telegram_message_id=bot_msg_id,
+        message=None
+    )
+
+    # Explicitly instruct user to reply if they want to comment:
+    await callback.message.edit_text(
+        "✅ Спасибо за оценку! Если хотите добавить комментарий, просто ответьте на это сообщение."
+    )
+    await callback.answer("✅ Оценка сохранена!")
+
+
+@router.message(lambda m: m.reply_to_message and m.reply_to_message.from_user.is_bot)
+async def handle_feedback_reply(message: types.Message):
+    bot_msg_id = message.reply_to_message.message_id
+
+    database = await gs().get_database()
+    updated = database.update_feedback_message(
+        telegram_message_id=bot_msg_id,
+        new_message=message.text
+    )
+
+    if updated:
+        await message.reply("✅ Ваш комментарий успешно добавлен к отзыву. Спасибо!")
+
+        # Optionally explicitly edit bot's message to signify success:
+        await message.reply_to_message.edit_text("✅ Оценка и комментарий успешно сохранены. Спасибо!")
+    else:
+        await message.reply("⚠️ Не удалось найти отзыв, связанный с этим сообщением.")

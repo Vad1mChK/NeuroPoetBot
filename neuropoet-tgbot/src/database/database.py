@@ -3,7 +3,6 @@ import random
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, joinedload
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from typing import Optional, List, Dict
 
 Base = declarative_base()
@@ -58,6 +57,19 @@ class Generation(Base):
         if self.ratings and len(self.ratings) > 0:
             return sum(r.rating for r in self.ratings) / len(self.ratings)
         return None
+
+
+class BotFeedback(Base):
+    __tablename__ = 'bot_feedback'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.user_id'), nullable=False)
+    rating = Column(Integer, nullable=False)  # Rating from 1 to 5
+    message = Column(String, nullable=True)   # Optional feedback message
+    telegram_message_id = Column(Integer, nullable=False, unique=True)  # Explicitly store Telegram message ID
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User", backref="feedbacks")
 
 
 class Database:
@@ -188,6 +200,99 @@ class Database:
             )
 
             return generation
+
+    def log_bot_feedback(
+            self,
+            user_id: int,
+            rating: int,
+            telegram_message_id: int,
+            message: Optional[str] = None
+    ) -> None:
+        with self.Session() as session:
+            self.add_user(user_id)
+            feedback = BotFeedback(
+                user_id=user_id,
+                rating=rating,
+                telegram_message_id=telegram_message_id,
+                message=message
+            )
+            session.add(feedback)
+            session.commit()
+
+    def update_feedback_message(
+            self,
+            telegram_message_id: int,
+            new_message: str
+    ) -> bool:
+        """Explicitly updates feedback message using telegram_message_id."""
+        with self.Session() as session:
+            feedback = session.query(BotFeedback).filter_by(
+                telegram_message_id=telegram_message_id
+            ).first()
+
+            if feedback:
+                feedback.message = new_message
+                session.commit()
+                return True
+            return False
+
+    def get_feedback_summary(self) -> dict[str, Optional[dict]]:
+        with self.Session() as session:
+            avg_rating = session.query(func.avg(BotFeedback.rating)).scalar()
+
+            best_feedback = session.query(BotFeedback) \
+                .order_by(BotFeedback.rating.desc(), BotFeedback.created_at.asc()) \
+                .first()
+
+            worst_feedback = session.query(BotFeedback) \
+                .order_by(BotFeedback.rating.asc(), BotFeedback.created_at.asc()) \
+                .first()
+
+            newest_feedback = session.query(BotFeedback) \
+                .order_by(BotFeedback.created_at.desc()) \
+                .first()
+
+            longest_feedback = session.query(BotFeedback) \
+                .filter(BotFeedback.message.isnot(None)) \
+                .order_by(func.length(BotFeedback.message).desc()) \
+                .first()
+
+            def serialize_feedback(fb: Optional[BotFeedback]) -> Optional[dict]:
+                if fb:
+                    return {
+                        "user_id": fb.user_id,
+                        "rating": fb.rating,
+                        "message": fb.message,
+                        "created_at": fb.created_at.isoformat()
+                    }
+                return None
+
+            return {
+                "average_rating": round(avg_rating, 2) if avg_rating else None,
+                "best_feedback": serialize_feedback(best_feedback),
+                "worst_feedback": serialize_feedback(worst_feedback),
+                "newest_feedback": serialize_feedback(newest_feedback),
+                "longest_feedback": serialize_feedback(longest_feedback),
+            }
+
+    def export_bot_feedback_json(self) -> str:
+        """Export all feedback entries explicitly to JSON."""
+        with self.Session() as session:
+            feedback_entries = session.query(BotFeedback).order_by(BotFeedback.created_at.asc()).all()
+
+            feedback_data = [
+                {
+                    "id": fb.id,
+                    "user_id": fb.user_id,
+                    "rating": fb.rating,
+                    "message": fb.message,
+                    "telegram_message_id": fb.telegram_message_id,
+                    "created_at": fb.created_at.isoformat()
+                }
+                for fb in feedback_entries
+            ]
+
+            return json.dumps(feedback_data, ensure_ascii=False, indent=2)
 
     def check_health(self) -> bool:
         """Simple database health check"""
