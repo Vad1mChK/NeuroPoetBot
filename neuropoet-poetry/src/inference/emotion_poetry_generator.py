@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
-from inference.postprocessing import RhymeScheme, PoemPostprocessor
+from .postprocessing import RhymeScheme, PoemPostprocessor
 
 import os
 # Explicitly get project root from current file location
