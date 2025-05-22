@@ -9,13 +9,13 @@ from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-from api.emotion_api import EmotionAnalyzeRequestDto
-from api.poetry_api import PoetryGenerationRequestDto
-from util.emoji import Emoji
-from util.markdown import escape_markdown
-from util.telegram.restrictions import owner_only_command, get_owner_ids
-from util.text import truncate_text
-from globals import get_global_state as gs
+from .api.emotion_api import EmotionAnalyzeRequestDto
+from .api.poetry_api import PoetryGenerationRequestDto
+from .util.emoji import Emoji
+from .util.markdown import escape_markdown
+from .util.telegram.restrictions import owner_only_command, get_owner_ids
+from .util.text import truncate_text
+from .globals import get_global_state as gs
 
 ABOUT_FILE = Path(__file__).parent.parent / "res" / "about.md"
 additional_command_list = {
