@@ -1,3 +1,7 @@
 .idea/
 venv/
 .env
+data/
+!data/rifma_dataset.json
+!data/nouns_processed.csv
+models/

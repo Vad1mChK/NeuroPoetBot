@@ -3,18 +3,21 @@ from datetime import datetime, UTC
 import random
 import os
 from dotenv import load_dotenv
+from src.inference.emotion_poetry_generator import EmotionPoetryGenerator
+from src.inference.postprocessing import RhymeScheme
 
 app = Flask(__name__)
+generator = EmotionPoetryGenerator()
 
+def generate_poem(emotions: dict[str, float], rhyme_scheme: RhymeScheme = RhymeScheme.ABBA) -> str:
+    global generator
 
-def generate_poem(emotions: dict[str, float]) -> str:
-    words = 'I am Steve this is a crafting table big ol\' red ones chicken jockey flint and steel ender pearl'.split()
-    return '\n'.join(
-        [' '.join(
-            [random.choice(words) for _ in range(10)]
-        )
-            for _ in range(4)
-        ]
+    emotions.setdefault("no_emotion", emotions.get("neutral", 0.0))
+    emotions.pop('neutral', None)
+
+    return generator.generate_poem(
+        emotion_dict=emotions,
+        rhyme_scheme=rhyme_scheme,
     )
 
 
@@ -27,9 +30,11 @@ def generate_endpoint():
         if not data or 'user_id' not in data or 'emotions' not in data:
             return jsonify({"error": "Invalid request format"}), 400
 
+        rhyme_scheme = random.choice([rs for rs in RhymeScheme])
         # Process request
         result = {
-            "poem": generate_poem(data['emotions']),
+            "poem": generate_poem(data['emotions'], rhyme_scheme=rhyme_scheme),
+            "rhyme_scheme": rhyme_scheme.value,
             "timestamp": datetime.now(UTC).isoformat(),
             "user_id": data['user_id']
         }
