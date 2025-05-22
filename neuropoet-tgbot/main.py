@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 
@@ -9,6 +10,7 @@ import src.commands as commands
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 async def main():
     API_TOKEN = os.getenv("NPB_API_TOKEN")

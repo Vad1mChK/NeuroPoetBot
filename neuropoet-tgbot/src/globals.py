@@ -1,8 +1,8 @@
 # globals.py
 from functools import lru_cache
-from api.emotion_api import EmotionAPI
-from api.poetry_api import PoetryAPI
-from database.database import Database
+from .api.emotion_api import EmotionAPI
+from .api.poetry_api import PoetryAPI
+from .database.database import Database
 import aiohttp
 
 
