@@ -148,7 +148,9 @@ async def cmd_emotions(message: types.Message):
                     f"📊 Распознанные эмоции:\n{escape_markdown("\n".join(
                         f'• {entry}' for entry in emotions_translated
                     ))}"
-                    f"🥇 Топовая эмоция: {top_emoji}{emotions_translated[0] or "неизвестно"}{top_emoji}"
+                    f"🥇 Топовая эмоция: {top_emoji}{escape_markdown(
+                        emotions_translated[0] or "неизвестно"
+                    )}{top_emoji}"
                 ),
                 parse_mode='MarkdownV2'
             )
