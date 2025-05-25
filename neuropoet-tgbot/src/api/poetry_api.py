@@ -9,11 +9,13 @@ from dotenv import load_dotenv
 class PoetryGenerationRequestDto:
     user_id: int
     emotions: dict[str, float]
+    gen_strategy: str
 
 
 @dataclass(frozen=True)
 class PoetryGenerationResponseDto:
     poem: str
+    gen_strategy: str
 
 
 class PoetryAPI:
@@ -40,12 +42,13 @@ class PoetryAPI:
                     f"{self.base_url}/generate",
                     json={
                         "user_id": request.user_id,
-                        "emotions": request.emotions
+                        "emotions": request.emotions,
+                        "gen_strategy": request.gen_strategy,
                     },
                     timeout=self.default_timeout
             ) as response:
                 data = await response.json()
-                return PoetryGenerationResponseDto(poem=data["poem"])
+                return PoetryGenerationResponseDto(poem=data["poem"], gen_strategy=data["gen_strategy"])
         except Exception as e:
             return None
 

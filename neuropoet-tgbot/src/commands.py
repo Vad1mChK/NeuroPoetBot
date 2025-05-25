@@ -4,12 +4,14 @@ import logging
 from typing import Callable
 from pathlib import Path
 
-from aiogram import Router, types, Bot
+from aiogram import Router, types, Bot, F
 from aiogram.filters.command import Command
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, \
     BufferedInputFile
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from database.database import GenerationModel, get_default_user_settings
 from .api.emotion_api import EmotionAnalyzeRequestDto
 from .api.poetry_api import PoetryGenerationRequestDto
 from .util.emoji import Emoji
@@ -201,10 +203,12 @@ async def cmd_generate(message: types.Message):
             "⌛ Выполняется генерация стихотворения",
             parse_mode="MarkdownV2"
         )
+        user_settings = database.get_user_data(message.from_user.id).user_settings
 
         poetry_request = PoetryGenerationRequestDto(
             user_id=message.from_user.id,
-            emotions=emotions
+            emotions=emotions,
+            gen_strategy=user_settings.get("preferred_model", "deepseek")
         )
         poetry_response = await poetry_api.generate_poem(poetry_request)
 
@@ -217,6 +221,7 @@ async def cmd_generate(message: types.Message):
         generation_record = database.log_generation(
             user_id=message.from_user.id,
             request_text=text,
+            emotions=emotions,
             response_text=poem
         )
         # Explicitly define rating buttons
@@ -229,7 +234,12 @@ async def cmd_generate(message: types.Message):
 
 
         await reply_message.edit_text(
-            f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}",
+            (
+                f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}\n\n"
+                f"📈 *Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
+                f"🧠 *Модель*: `{poetry_response.gen_strategy}`\n\n"
+                "_Оцените генерацию!_"
+            ),
             parse_mode='MarkdownV2',
             reply_markup=rating_buttons
         )
@@ -404,6 +414,22 @@ async def cmd_feedback(message: types.Message):
         reply_markup=star_buttons
     )
 
+
+@router.message(Command("settings"))
+async def cmd_settings(message: types.Message):
+    database = await gs().get_database()
+    user = database.get_user_data(message.from_user.id)
+
+    current_settings = get_default_user_settings()
+    current_settings.update(user.user_settings or {})
+
+    await message.answer(
+        "⚙️ *Настройки пользователя*",
+        parse_mode="MarkdownV2",
+        reply_markup=get_settings_keyboard(current_settings)
+    )
+
+
 @router.message(Command("health"))
 async def cmd_health(message: types.Message):
     sent_reply = await message.reply("🩺 Проверка статуса сервисов...")
@@ -503,8 +529,11 @@ async def cmd_get_feedback(message: types.Message):
         f"Средний рейтинг: ⭐ {escape_markdown(str(summary['average_rating'])) or 'нет данных'}\n\n"
         f"Средний рейтинг \\(генерации\\): ⭐ {escape_markdown(str(summary['avg_gen_rating']))}\n"
         "• по моделям:\n"
-        + "\n".join([])
-        + "\n"
+        + "\n".join(
+            f"  • `{entry[0]}`: ⭐ {escape_markdown(str(entry[1]))}"
+            for entry in summary['avg_gen_rating_by_model'].items()
+        )
+        + "\n\n"
         f"{format_feedback('Лучший отзыв', summary['best_feedback'])}\n"
         f"{format_feedback('Худший отзыв', summary['worst_feedback'])}\n"
         f"{format_feedback('Самый свежий отзыв', summary['newest_feedback'])}\n"
@@ -521,16 +550,92 @@ async def cmd_export_feedback(message: types.Message):
 
     feedback_json = database.export_bot_feedback_json()
     feedback_bytes = feedback_json.encode("utf-8")
+    MAX_DISPLAY_LEN = 1024
 
     file = BufferedInputFile(
         file=feedback_bytes,
         filename="bot_feedback.json"
     )
 
+    summary = (
+        "📃 *Содержимое отзывов: *" + f"```json\n{feedback_json}\n```"
+        if len(feedback_bytes) <= MAX_DISPLAY_LEN
+        else (
+            f"📃 *Содержимое отзывов превышает размер для отображения*: {MAX_DISPLAY_LEN} Б, "
+            + escape_markdown("поэтому я отправил его файлом.")
+        )
+    )
+
     await message.reply_document(
         file,
-        caption="📝 Экспорт отзывов успешно создан."
+        caption=(
+            escape_markdown("📄 Экспорт отзывов успешно создан.\n")
+            + summary
+        ),
+        parse_mode="MarkdownV2"
     )
+
+
+# Explicitly ignore clicks on non-clickable button
+@router.callback_query(F.data == "ignore")
+async def ignore_callback(callback: types.CallbackQuery):
+    await callback.answer()  # Silently ignore the click
+
+
+def get_settings_keyboard(settings: dict):
+    builder = InlineKeyboardBuilder()
+
+    # First setting: Generation model
+    builder.button(
+        text="🔧 Модель генерации: 🔧",
+        callback_data="ignore"
+    )
+
+    for model in GenerationModel:
+        selected_icon = '🔘' if settings.get('preferred_model') == model.value else '⚫'
+        builder.button(
+            text=f"{selected_icon} {model.value}",
+            callback_data=f"settings:preferred_model={model.value}"
+        )
+
+    # Additional settings can be added here in future following the same pattern:
+    # builder.button("Setting Title", callback_data="ignore")
+    # builder.button("(x) option", callback_data="settings:setting_name=value")
+
+    builder.adjust(1, len(list(GenerationModel)))
+
+    return builder.as_markup()
+
+@router.callback_query(F.data.startswith("settings:"))
+async def handle_setting(callback: types.CallbackQuery):
+    _, pair = callback.data.split(":", 1)
+    setting_name, setting_value = pair.split("=", 1)
+
+    user_id = callback.from_user.id
+    database = await gs().get_database()
+
+    # Update the user's setting explicitly
+    database.update_user_settings(
+        user_id,
+        {setting_name: setting_value}
+    )
+
+    # Get updated user settings to reflect correctly in the keyboard
+    user = database.get_user_data(user_id)
+    current_settings = get_default_user_settings()
+    current_settings.update(user.user_settings or {})
+
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=get_settings_keyboard(current_settings)
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass  # Silently ignore, as it's expected
+        else:
+            raise  # Re-raise unexpected errors
+
+    await callback.answer(f"✅ Настройка изменена: {setting_name} → {setting_value}")
 
 
 # Explicitly handle rating callback
