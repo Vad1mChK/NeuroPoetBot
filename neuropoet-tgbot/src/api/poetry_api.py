@@ -16,6 +16,7 @@ class PoetryGenerationRequestDto:
 class PoetryGenerationResponseDto:
     poem: str
     gen_strategy: str
+    rhyme_scheme: str
 
 
 class PoetryAPI:
@@ -48,7 +49,11 @@ class PoetryAPI:
                     timeout=self.default_timeout
             ) as response:
                 data = await response.json()
-                return PoetryGenerationResponseDto(poem=data["poem"], gen_strategy=data["gen_strategy"])
+                return PoetryGenerationResponseDto(
+                    poem=data["poem"],
+                    gen_strategy=data["gen_strategy"],
+                    rhyme_scheme = data.get("rhyme_scheme", "Неизвестно")
+                )
         except Exception as e:
             return None
 

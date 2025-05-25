@@ -66,6 +66,7 @@ class Generation(Base):
     emotions = Column(JSON)
     response_text = Column(String)
     model = Column(String, nullable=False, default="ru_gpt3")
+    rhyme_scheme = Column(String, default="Неизвестно")
 
     # Relationships
     user = relationship("User", back_populates="generations")

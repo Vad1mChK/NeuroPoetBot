@@ -237,6 +237,7 @@ async def cmd_generate(message: types.Message):
             (
                 f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}\n\n"
                 f"📈 *Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
+                f"✒ *Схема рифмовки*: {escape_markdown(poetry_response.rhyme_scheme)}\n"
                 f"🧠 *Модель*: `{poetry_response.gen_strategy}`\n\n"
                 "_Оцените генерацию!_"
             ),
