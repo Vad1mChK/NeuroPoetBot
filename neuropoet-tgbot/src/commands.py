@@ -76,9 +76,9 @@ async def cmd_help(message: types.Message):
     )
     if message.from_user.id in get_owner_ids():
         command_list_formatted += '\nДополнительные команды для владельцев:\n'
-    command_list_formatted += '\n'.join(
-        f'/{cmd[0]}: {cmd[1]}' for cmd in additional_command_list.items()
-    )
+        command_list_formatted += '\n'.join(
+            f'/{cmd[0]}: {cmd[1]}' for cmd in additional_command_list.items()
+        )
 
     await message.answer(command_list_formatted)
 
