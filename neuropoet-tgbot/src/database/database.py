@@ -1,18 +1,34 @@
 import json
 import random
 from datetime import datetime
+from enum import Enum
+
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, joinedload
 from typing import Optional, List, Dict
 
 Base = declarative_base()
 
 
+class GenerationModel(Enum):
+    RUGPT3 = 'ru_gpt3'
+    DEEPSEEK = 'deepseek'
+
+
+DEFAULT_USER_SETTINGS = {
+    "preferred_model": GenerationModel.RUGPT3.value,
+}
+
+def get_default_user_settings():
+    return json.loads(json.dumps(DEFAULT_USER_SETTINGS))
+
 class User(Base):
     __tablename__ = 'users'
 
     user_id = Column(Integer, primary_key=True)
     registered_at = Column(DateTime, default=datetime.now)
+    user_settings = Column(MutableDict.as_mutable(JSON), default=lambda: DEFAULT_USER_SETTINGS.copy())
 
     # Relationships
     emotions = relationship("EmotionAnalysis", back_populates="user")
@@ -47,7 +63,11 @@ class Generation(Base):
     user_id = Column(Integer, ForeignKey('users.user_id'))
     performed_at = Column(DateTime, default=datetime.now)
     request_text = Column(String)
+    emotions = Column(JSON)
     response_text = Column(String)
+    model = Column(String, nullable=False, default="ru_gpt3")
+    rhyme_scheme = Column(String, default="Неизвестно")
+    genre = Column(String, default="произвольный")
 
     # Relationships
     user = relationship("User", back_populates="generations")
@@ -105,7 +125,11 @@ class Database:
             self,
             user_id: int,
             request_text: str,
-            response_text: str
+            emotions: Dict[str, float],
+            response_text: str,
+            model: str,
+            rhyme_scheme: str,
+            genre: str,
     ) -> Generation:
         """Log poetry generation result and explicitly return the Generation object"""
         with self.Session() as session:
@@ -114,7 +138,11 @@ class Database:
             generation = Generation(
                 user_id=user_id,
                 request_text=request_text,
-                response_text=response_text
+                emotions=emotions,
+                response_text=response_text,
+                model=model,
+                rhyme_scheme=rhyme_scheme,
+                genre=genre,
             )
             session.add(generation)
             session.commit()
@@ -172,6 +200,21 @@ class Database:
                 .filter_by(user_id=user_id)
                 .first()
             )
+
+    def update_user_settings(self, user_id: int, new_settings: dict) -> bool:
+        """Explicitly update user settings JSON by user_id."""
+        with self.Session() as session:
+            user = session.query(User).filter_by(user_id=user_id).first()
+
+            if user:
+                if user.user_settings is None:
+                    user.user_settings = new_settings
+                else:
+                    user.user_settings.update(new_settings)
+
+                session.commit()
+                return True
+            return False
 
     def get_all_poems(self, limit: int = 100) -> list[str]:
         with self.Session() as session:
@@ -236,9 +279,30 @@ class Database:
                 return True
             return False
 
+    def get_average_ratings_by_model(self) -> dict[str, float]:
+        """Explicitly calculate average ratings grouped by model."""
+        with self.Session() as session:
+            results = session.query(
+                Generation.model,
+                func.avg(GenerationRating.rating).label('average_rating'),
+                func.count(GenerationRating.id).label('num_ratings')
+            ).join(
+                GenerationRating, Generation.id == GenerationRating.generation_id
+            ).group_by(
+                Generation.model
+            ).all()
+
+            return {
+                model: round(avg_rating, 2)
+                for model, avg_rating, count in results
+                if count > 0
+            }
+
     def get_feedback_summary(self) -> dict[str, Optional[dict]]:
         with self.Session() as session:
             avg_rating = session.query(func.avg(BotFeedback.rating)).scalar()
+            avg_generation_rating = session.query(func.avg(GenerationRating.rating)).scalar()
+            avg_generation_rating_by_model = self.get_average_ratings_by_model()
 
             best_feedback = session.query(BotFeedback) \
                 .order_by(BotFeedback.rating.desc(), BotFeedback.created_at.asc()) \
@@ -269,6 +333,9 @@ class Database:
 
             return {
                 "average_rating": round(avg_rating, 2) if avg_rating else None,
+                "avg_gen_rating":
+                    round(avg_generation_rating, 2) if avg_generation_rating else None,
+                "avg_gen_rating_by_model": avg_generation_rating_by_model,
                 "best_feedback": serialize_feedback(best_feedback),
                 "worst_feedback": serialize_feedback(worst_feedback),
                 "newest_feedback": serialize_feedback(newest_feedback),
@@ -278,19 +345,27 @@ class Database:
     def export_bot_feedback_json(self) -> str:
         """Export all feedback entries explicitly to JSON."""
         with self.Session() as session:
-            feedback_entries = session.query(BotFeedback).order_by(BotFeedback.created_at.asc()).all()
+            bot_feedback_entries = session.query(BotFeedback).order_by(BotFeedback.created_at.asc()).all()
+            summary = self.get_feedback_summary()
 
-            feedback_data = [
-                {
-                    "id": fb.id,
-                    "user_id": fb.user_id,
-                    "rating": fb.rating,
-                    "message": fb.message,
-                    "telegram_message_id": fb.telegram_message_id,
-                    "created_at": fb.created_at.isoformat()
-                }
-                for fb in feedback_entries
-            ]
+            feedback_data = {
+                "summary": summary,
+                "generations": {
+                    "avg_rating": summary["avg_gen_rating"],
+                    "avg_rating_by_model": summary["avg_gen_rating_by_model"],
+                },
+                "bot": [
+                    {
+                        "id": fb.id,
+                        "user_id": fb.user_id,
+                        "rating": fb.rating,
+                        "message": fb.message,
+                        "telegram_message_id": fb.telegram_message_id,
+                        "created_at": fb.created_at.isoformat()
+                    }
+                    for fb in bot_feedback_entries
+                ]
+            }
 
             return json.dumps(feedback_data, ensure_ascii=False, indent=2)
 
