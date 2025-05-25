@@ -18,6 +18,7 @@ class PoetryGenerationResponseDto:
     gen_strategy: str
     rhyme_scheme: str
     genre: str
+    is_postprocessed: bool
 
 
 class PoetryAPI:
@@ -54,7 +55,8 @@ class PoetryAPI:
                     poem=data["poem"],
                     gen_strategy=data["gen_strategy"],
                     rhyme_scheme=data.get("rhyme_scheme", "Неизвестно"),
-                    genre=data.get("genre", "произвольный")
+                    genre=data.get("genre", "произвольный"),
+                    is_postprocessed=data.get("is_postprocessed", True)
                 )
         except Exception as e:
             return None
