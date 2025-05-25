@@ -29,6 +29,10 @@ EMOTION_TRANSLATIONS = {
     'no_emotion': 'нейтральная'
 }
 
+GENRES = {
+
+}
+
 
 def impute_rhyme_scheme(rhyme_scheme: str) -> str | None:
     '''
@@ -148,7 +152,7 @@ def extract_rhyme_key(accented_line: str, debug_log: bool = False) -> str:
 
 def emotion_dict_to_russian_str(
         emotions: dict[str, float],
-        high_threshold: float | None = 0.25,
+        high_threshold: float | None = 0.2,
         low_threshold: float | None = 0.001,
         max_emotions: int | None = 3,
 ) -> str:
@@ -165,6 +169,19 @@ def emotion_dict_to_russian_str(
         f"{EMOTION_TRANSLATIONS.get(emo, emo)} ({int(score * 100)}%)"
         for emo, score in top_emotions
     )
+
+# Функция определения жанра по главной эмоции
+def get_genre_from_top_emotion(emotion_dict):
+    top_emotion = max(emotion_dict, key=emotion_dict.get)
+    genre_mapping = {
+        'joy': 'лирическая поэзия',
+        'sadness': 'элегия',
+        'anger': 'сатира',
+        'fear': 'мистическая поэзия',
+        'surprise': 'экспериментальная поэзия',
+        'neutral': 'философская поэзия'
+    }
+    return genre_mapping.get(top_emotion, 'лирическая поэзия')
 
 
 # Test your fixed implementation explicitly

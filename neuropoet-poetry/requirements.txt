@@ -10,5 +10,6 @@ bitsandbytes
 accelerate
 datasets
 tqdm
+requests
 pyphen
 git+https://github.com/Desklop/StressRNN

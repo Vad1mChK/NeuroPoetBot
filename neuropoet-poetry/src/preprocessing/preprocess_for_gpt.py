@@ -1,7 +1,7 @@
 import json
 from tqdm import tqdm
 
-from preprocessing.preprocessing_utils import emotion_dict_to_russian_str
+from preprocessing.preprocessing_utils import emotion_dict_to_russian_str, get_genre_from_top_emotion
 
 # Load annotated dataset
 with open("../../data/rifma_annotated.json", "r", encoding="utf-8") as f:
@@ -22,22 +22,11 @@ for poem_entry in tqdm(rifma_annotated):
 
         line_prompts.append(f"{idx}: {accented_line} [{syllables} слогов]")
 
-    # structured_prompt = (
-    #     f"Эмоции: {emotion_prompt}\n"
-    #     f"Рифма: {rhyme_scheme}\n"
-    #     f"Строки и ударения:\n"
-    #     + "\n".join(line_prompts)
-    #     + "\n[СТИХ]\n"
-    # )
-    #
-    # poem_text = "\n".join(line['text'] for line in poem_entry['lines'])
-
     structured_prompt = (
             f"Эмоции: {emotion_prompt}\n"
             f"Рифма: {rhyme_scheme}\n"
-            # f"Строки и ударения:\n"
-            # + "\n".join(line_prompts)
-            + "\n[СТИХ]\n"
+            f"Жанр: {get_genre_from_top_emotion(emotion_dict=emotions)}"
+            "\n[СТИХ]\n"
     )
 
     poem_text = "\n".join(

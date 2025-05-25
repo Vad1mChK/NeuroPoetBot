@@ -1,3 +1,4 @@
 # Create an .env file in neuropoet-poetry/ root directory
 NPB_POETRY_API_PORT=5001
 DEEPSEEK_API_KEY=insert-your-key-from-openrouter-here
+DEEPSEEK_API_TIMEOUT=60
