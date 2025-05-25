@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func, cast
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, joinedload
 from typing import Optional, List, Dict
@@ -341,6 +341,69 @@ class Database:
                 if count > 0
             }
 
+    def get_ratings_by_top_emotion(self) -> dict[str, dict[str, float]]:
+        """Explicitly compute average ratings grouped by the top emotion."""
+        with self.Session() as session:
+            query_results = session.query(
+                Generation.emotions,
+                GenerationRating.rating
+            ).join(
+                GenerationRating, Generation.id == GenerationRating.generation_id
+            ).all()
+
+            emotion_stats = defaultdict(list)
+
+            for emotions, rating in query_results:
+                if emotions:
+                    top_emotion = max(emotions.items(), key=lambda x: x[1])[0]
+                    emotion_stats[top_emotion].append(rating)
+
+            return {
+                emotion: {
+                    "avg_rating": round(sum(ratings) / len(ratings), 2),
+                    "count": len(ratings)
+                }
+                for emotion, ratings in emotion_stats.items()
+            }
+
+    def get_ratings_by_rhyme_scheme(self) -> dict[str, dict[str, float]]:
+        """Calculate average ratings explicitly by rhyme scheme."""
+        with self.Session() as session:
+            rhyme_scheme_results = session.query(
+                Generation.rhyme_scheme,
+                func.avg(GenerationRating.rating),
+                func.count(GenerationRating.id)
+            ).join(
+                GenerationRating, Generation.id == GenerationRating.generation_id
+            ).group_by(Generation.rhyme_scheme).all()
+
+            return {
+                scheme: {
+                    "avg_rating": round(avg, 2),
+                    "count": count
+                }
+                for scheme, avg, count in rhyme_scheme_results
+            }
+
+    def get_ratings_by_genre(self) -> dict[str, dict[str, float]]:
+        """Calculate average ratings explicitly by genre."""
+        with self.Session() as session:
+            genre_results = session.query(
+                Generation.genre,
+                func.avg(GenerationRating.rating),
+                func.count(GenerationRating.id)
+            ).join(
+                GenerationRating, Generation.id == GenerationRating.generation_id
+            ).group_by(Generation.genre).all()
+
+            return {
+                genre: {
+                    "avg_rating": round(avg, 2),
+                    "count": count
+                }
+                for genre, avg, count in genre_results
+            }
+
     def get_feedback_summary(self) -> dict[str, Optional[dict]]:
         with self.Session() as session:
             avg_rating = session.query(func.avg(BotFeedback.rating)).scalar()
@@ -397,7 +460,10 @@ class Database:
                     "avg_rating": summary["avg_gen_rating"],
                     "avg_rating_by_model": summary["avg_gen_rating_by_model"],
                     "rating_distribution": self.get_generation_rating_distribution(),
-                    "rating_distibution_by_model": self.get_generation_rating_distribution_by_model()
+                    "rating_distibution_by_model": self.get_generation_rating_distribution_by_model(),
+                    "ratings_by_top_emotion": self.get_ratings_by_top_emotion(),
+                    "ratings_by_rhyme_scheme": self.get_ratings_by_rhyme_scheme(),
+                    "ratings_by_genre": self.get_ratings_by_genre(),
                 },
                 "bot": [
                     {
