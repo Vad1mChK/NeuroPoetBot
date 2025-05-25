@@ -40,7 +40,7 @@ def generate_endpoint():
         generation_result = generate_poem(
                 data['emotions'],
                 rhyme_scheme=rhyme_scheme,
-                gen_strategy=GenerationStrategy.for_name(
+                gen_strategy=GenerationStrategy.for_value(
                     data.get('gen_strategy', 'rugpt_3')
                 ) or GenerationStrategy.RUGPT3,
             )
