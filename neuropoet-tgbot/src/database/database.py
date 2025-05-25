@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func, cast
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON, ForeignKey, text, func, cast, Boolean
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, joinedload
 from typing import Optional, List, Dict
@@ -34,6 +34,7 @@ class User(Base):
     # Relationships
     emotions = relationship("EmotionAnalysis", back_populates="user")
     generations = relationship("Generation", back_populates="user")
+    emotion_ratings = relationship("EmotionRating", back_populates="user")
 
 
 class EmotionAnalysis(Base):
@@ -42,10 +43,12 @@ class EmotionAnalysis(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.user_id'))
     performed_at = Column(DateTime, default=datetime.now)
+    request_text = Column(String)  # Текст сообщения
     emotions = Column(JSON)  # Stores dict like {'happy': 0.8, 'sad': 0.2}
 
     # Relationships
     user = relationship("User", back_populates="emotions")
+    ratings = relationship("EmotionRating", back_populates="emotion_analysis")
 
 
 class GenerationRating(Base):
@@ -93,6 +96,21 @@ class BotFeedback(Base):
     user = relationship("User", backref="feedbacks")
 
 
+class EmotionRating(Base):
+    __tablename__ = 'emotion_ratings'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.user_id'))
+    emotion_analysis_id = Column(Integer, ForeignKey('emotion_analyses.id'))
+    is_correct = Column(Boolean, nullable=False)  # правильно ли определена эмоция
+    correct_emotion = Column(String, nullable=True)  # правильная эмоция, если is_correct=False
+    created_at = Column(DateTime, default=datetime.now)
+
+    # Relationships
+    user = relationship("User", back_populates="emotion_ratings")
+    emotion_analysis = relationship("EmotionAnalysis", back_populates="ratings")
+
+
 class Database:
     def __init__(self, db_url: str = "sqlite:///neuropoet.db"):
         self.engine = create_engine(db_url)
@@ -111,16 +129,21 @@ class Database:
     def log_emotion_analysis(
             self,
             user_id: int,
-            emotions: Dict[str, float]
-    ) -> None:
-        """Log emotion analysis result"""
+            emotions: Dict[str, float],
+            request_text: str
+    ) -> EmotionAnalysis:
+        """Log emotion analysis result and return the created object"""
         with self.Session() as session:
             self.add_user(user_id)  # Ensure user exists
-            session.add(EmotionAnalysis(
+            analysis = EmotionAnalysis(
                 user_id=user_id,
-                emotions=emotions
-            ))
+                emotions=emotions,
+                request_text=request_text
+            )
+            session.add(analysis)
             session.commit()
+            session.refresh(analysis)  # Refresh to get the generated ID
+            return analysis
 
     def log_generation(
             self,
@@ -490,6 +513,50 @@ class Database:
             print(f"Database health check failed: {str(e)}")
             return False
 
+    def rate_emotion_analysis(
+        self,
+        user_id: int,
+        emotion_analysis_id: int,
+        is_correct: bool,
+        correct_emotion: Optional[str] = None
+    ) -> None:
+        """Сохраняет оценку анализа эмоций"""
+        with self.Session() as session:
+            session.add(EmotionRating(
+                user_id=user_id,
+                emotion_analysis_id=emotion_analysis_id,
+                is_correct=is_correct,
+                correct_emotion=correct_emotion
+            ))
+            session.commit()
+
+    def has_user_rated_emotion(self, user_id: int, emotion_analysis_id: int) -> bool:
+        """Проверяет, оценивал ли пользователь этот анализ эмоций"""
+        with self.Session() as session:
+            return session.query(EmotionRating).filter_by(
+                user_id=user_id,
+                emotion_analysis_id=emotion_analysis_id
+            ).first() is not None
+
+    def get_emotion_rating_stats(self) -> dict:
+        """Получает статистику по оценкам эмоций"""
+        with self.Session() as session:
+            total_ratings = session.query(func.count(EmotionRating.id)).scalar()
+            correct_ratings = session.query(func.count(EmotionRating.id)).filter_by(is_correct=True).scalar()
+            
+            # Получаем распределение правильных эмоций
+            correct_emotions = session.query(
+                EmotionRating.correct_emotion,
+                func.count(EmotionRating.id)
+            ).filter_by(is_correct=False).group_by(EmotionRating.correct_emotion).all()
+
+            return {
+                "total_ratings": total_ratings,
+                "correct_ratings": correct_ratings,
+                "accuracy": correct_ratings / total_ratings if total_ratings > 0 else 0,
+                "correct_emotions_distribution": dict(correct_emotions)
+            }
+
 
 # Usage example
 if __name__ == "__main__":
@@ -500,7 +567,7 @@ if __name__ == "__main__":
     db.add_user(user_id)
 
     # Log emotion analysis
-    db.log_emotion_analysis(user_id, {"happy": 0.8, "sad": 0.1})
+    db.log_emotion_analysis(user_id, {"happy": 0.8, "sad": 0.1}, "Грустный текст о осени")
 
     # Log generation
     db.log_generation(
