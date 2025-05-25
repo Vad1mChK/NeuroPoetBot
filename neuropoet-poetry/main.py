@@ -13,7 +13,7 @@ def generate_poem(
         emotions: dict[str, float],
         rhyme_scheme: RhymeScheme = RhymeScheme.ABBA,
         gen_strategy: GenerationStrategy = GenerationStrategy.RUGPT3
-) -> str:
+) -> dict[str, str]:
     global generator
 
     emotions.setdefault("no_emotion", emotions.get("neutral", 0.0))
@@ -37,20 +37,22 @@ def generate_endpoint():
             return jsonify({"error": "Invalid request format"}), 400
 
         rhyme_scheme = random.choice([rs for rs in RhymeScheme])
-
-        # Process request
-        result = {
-            "poem": generate_poem(
+        generation_result = generate_poem(
                 data['emotions'],
                 rhyme_scheme=rhyme_scheme,
                 gen_strategy=GenerationStrategy.for_name(
                     data.get('gen_strategy', 'rugpt_3')
                 ) or GenerationStrategy.RUGPT3,
-            ),
+            )
+
+        # Process request
+        result = {
+            "poem": generation_result['poem'],
             "rhyme_scheme": rhyme_scheme.value,
             "timestamp": datetime.now(UTC).isoformat(),
             "user_id": data['user_id'],
-            "gen_strategy": data.get('gen_strategy', None)
+            "gen_strategy": data.get('gen_strategy', None),
+            "genre": generation_result['genre']
         }
 
         return jsonify(result), 200
