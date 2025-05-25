@@ -241,9 +241,21 @@ async def cmd_generate(message: types.Message):
             ]]
         )
 
+        postprocess_warning = (
+            (
+                f">⚠️ {escape_markdown(
+                    'Модель сгенерировала ответ в неверном формате, и не удалось провести постобработку.'
+                )}\n"
+                f"> {escape_markdown('Вот необработанный вариант:')}\n"
+            )
+            if not poetry_response.is_postprocessed
+            else ""
+        )
+
         await reply_message.edit_text(
             (
-                f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}\n\n"
+                postprocess_warning
+                + f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}\n\n"
                 f"📈 *Преобладают эмоции*: {escape_markdown(top_emotions)}\n"
                 f"✒ *Схема рифмовки*: {escape_markdown(poetry_response.rhyme_scheme)}\n"
                 f"💡 *Жанр*: {escape_markdown(poetry_response.genre)}\n"
