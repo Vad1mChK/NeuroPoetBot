@@ -1,5 +1,6 @@
 import json
 import random
+from collections import defaultdict
 from datetime import datetime
 from enum import Enum
 
@@ -193,6 +194,48 @@ class Database:
                 rater_id=rater_id, generation_id=generation_id
             ).first() is not None
 
+    def get_generation_rating_distribution(self) -> dict[int, int]:
+        """Get explicit distribution of generation ratings (1–5)."""
+        with self.Session() as session:
+            ratings_counts = session.query(
+                GenerationRating.rating,
+                func.count(GenerationRating.rating)
+            ).group_by(GenerationRating.rating).all()
+
+            # Explicitly ensure keys 1 through 5 are present, defaulting to 0
+            distribution = defaultdict(int, {rating: count for rating, count in ratings_counts})
+
+            return {rating: distribution[rating] for rating in range(1, 6)}
+
+    def get_generation_rating_distribution_by_model(self) -> dict[str, dict[int, int]]:
+        """
+        Get explicit distribution of generation ratings (1–5) grouped by generation model.
+        Example:
+            {
+                "deepseek": {1: 0, 2: 0, 3: 0, 4: 1, 5: 9},
+                "ru_gpt3": {1: 2, 2: 1, 3: 3, 4: 7, 5: 4}
+            }
+        """
+        with self.Session() as session:
+            ratings_data = session.query(
+                Generation.model,
+                GenerationRating.rating,
+                func.count(GenerationRating.rating)
+            ).join(
+                GenerationRating, Generation.id == GenerationRating.generation_id
+            ).group_by(
+                Generation.model,
+                GenerationRating.rating
+            ).all()
+
+            # Explicitly prepare nested dictionaries with default zeros
+            model_distribution = defaultdict(lambda: {rating: 0 for rating in range(1, 6)})
+
+            for model, rating, count in ratings_data:
+                model_distribution[model][rating] = count
+
+            return dict(model_distribution)
+
     def get_user_data(self, user_id: int) -> User | None:
         with (self.Session() as session):
             return (
@@ -353,6 +396,8 @@ class Database:
                 "generations": {
                     "avg_rating": summary["avg_gen_rating"],
                     "avg_rating_by_model": summary["avg_gen_rating_by_model"],
+                    "rating_distribution": self.get_generation_rating_distribution(),
+                    "rating_distibution_by_model": self.get_generation_rating_distribution_by_model()
                 },
                 "bot": [
                     {
