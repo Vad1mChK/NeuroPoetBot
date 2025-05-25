@@ -12,6 +12,7 @@ from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboar
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database.database import GenerationModel, get_default_user_settings
+from util.emotion import top_emotions_translated
 from .api.emotion_api import EmotionAnalyzeRequestDto
 from .api.poetry_api import PoetryGenerationRequestDto
 from .util.emoji import Emoji
@@ -128,7 +129,6 @@ async def cmd_emotions(message: types.Message):
                 response.emotions.keys(),
                 key=lambda x: response.emotions.get(x, 0.0)
             ) or "no_emotion"
-            top_emotion_percentage = int(response.emotions.get(top_emotion, 0) * 100)
             emojis: dict[str, Emoji] = {
                 "joy": Emoji.BIG_SMILE,
                 "sad": Emoji.TEAR,
@@ -141,10 +141,14 @@ async def cmd_emotions(message: types.Message):
                 "no_emotion": Emoji.NEUTRAL,
             }
             top_emoji = emojis.get(top_emotion, Emoji.NEUTRAL).emoji
+
+            emotions_translated = top_emotions_translated(response.emotions)
             await reply_message.edit_text(
                 (
-                    f"📊 Распознанные эмоции:\n```json\n{emotions_json}\n```\n"
-                    f"🥇 Топовая эмоция: {top_emoji}{top_emotion}{top_emoji} \\({top_emotion_percentage}%\\)"
+                    f"📊 Распознанные эмоции:\n{escape_markdown("\n".join(
+                        f'• {entry}' for entry in emotions_translated
+                    ))}"
+                    f"🥇 Топовая эмоция: {top_emoji}{emotions_translated[0] or "неизвестно"}{top_emoji}"
                 ),
                 parse_mode='MarkdownV2'
             )
@@ -194,12 +198,11 @@ async def cmd_generate(message: types.Message):
 
         emotions = emotion_response.emotions
         database.log_emotion_analysis(user_id=message.from_user.id, emotions=emotions)
-        top_emotion = max(emotions.keys(), key=lambda x: emotions.get(x, 0.0))
-        top_emotion_percentage = int(emotions.get(top_emotion, 0) * 100)
+        top_emotions = ", ".join(top_emotions_translated(emotions, limit=3))
 
         await reply_message.edit_text(
             "📈 Анализ эмоций выполнен\n"
-            f"*Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
+            f"*Преобладают эмоции*: {escape_markdown(top_emotions)}\n"
             "⌛ Выполняется генерация стихотворения",
             parse_mode="MarkdownV2"
         )
@@ -235,15 +238,14 @@ async def cmd_generate(message: types.Message):
             ]]
         )
 
-
         await reply_message.edit_text(
             (
                 f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}\n\n"
-                f"📈 *Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
+                f"📈 *Преобладают эмоции*: {escape_markdown(top_emotions)}\n"
                 f"✒ *Схема рифмовки*: {escape_markdown(poetry_response.rhyme_scheme)}\n"
                 f"💡 *Жанр*: {escape_markdown(poetry_response.genre)}\n"
                 f"🧠 *Модель*: `{poetry_response.gen_strategy}`\n\n"
-                "Оцените генерацию\!"
+                "Оцените генерацию\\!"
             ),
             parse_mode='MarkdownV2',
             reply_markup=rating_buttons
@@ -279,13 +281,10 @@ async def cmd_history(message: types.Message):
             response.append("*📊 Последние анализы эмоций:*")
             for idx, emotion in enumerate(history['emotions'], 1):
                 date = emotion.performed_at.strftime("%d.%m.%Y %H:%M")
-                print(emotion.emotions.items())
-                top_emotion = max(emotion.emotions.items(), key=lambda x: x[1])
-                top_emotion_str = f"{top_emotion[0]} ({top_emotion[1]})"
+                top_emotion_str = ", ".join(top_emotions_translated(emotion.emotions, limit=3))
                 response.append(
                     f"{idx}\\. *{escape_markdown(date)}*\n"
-                    f"*Преобладает эмоция*: {escape_markdown(top_emotion_str)}"
-                    # f"*Эмоции*: ```json\n{json.dumps(emotion.emotions)}\n```"
+                    f"*Преобладают эмоции*: {escape_markdown(top_emotion_str)}"
                 )
 
         # Форматируем генерации
@@ -339,8 +338,7 @@ async def cmd_stats(message: types.Message):
                 for emo, total in emotions.items()
             }
             emotions_text = "\n".join(
-                f"{emo}: {val:.2f}"
-                for emo, val in sorted(emotions_avg.items(), key=lambda x: -x[1])
+                f"• {entry}" for entry in top_emotions_translated(emotions_avg)
             )
         else:
             emotions_text = "Нет данных об эмоциях"
@@ -383,7 +381,7 @@ async def cmd_random_poem(message: types.Message):
 
         # Get explicit average rating
         avg_rating = poem.average_rating()
-        avg_rating_text = f"\n⭐ Средняя оценка: {avg_rating:.1f}/5" if avg_rating else ""
+        avg_rating_text = f"📈 Средняя оценка: ⭐ {avg_rating:.1f}\n" if avg_rating else ""
 
         reply_markup = None
         if not user_already_rated:
@@ -393,10 +391,20 @@ async def cmd_random_poem(message: types.Message):
                 for i in range(1, 6)
             ]])
 
+        top_emotions = top_emotions_translated(poem.emotions, limit=3)
+
         await message.reply(
-            f"*Случайное стихотворение*:\n"
-            f"{escape_markdown(poem.response_text)}"
-            f"{escape_markdown(avg_rating_text)}",
+            (
+                f"🎲 *Случайное стихотворение*:\n"
+                f"{escape_markdown(poem.response_text)}"
+                "\n\n"
+                f"🎭 *Преобладающие эмоции*:\n {
+                    escape_markdown(", ".join(top_emotions) if top_emotions else "неизвестно")
+                }"
+                + "\n"
+                f"{escape_markdown(avg_rating_text)}"
+                + (escape_markdown("Вы уже оценили это стихотворение.") if user_already_rated else "")
+            ),
             parse_mode="MarkdownV2",
             reply_markup=reply_markup
         )
