@@ -4,7 +4,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-from preprocessing.preprocessing_utils import emotion_dict_to_russian_str
+from preprocessing.preprocessing_utils import emotion_dict_to_russian_str, get_genre_from_top_emotion
 from postprocessing import RhymeScheme, PoemPostprocessor
 from deepseek_api import generate_poem_with_deepseek
 
@@ -53,6 +53,7 @@ class EmotionPoetryGenerator:
                 prompt = (
                     f"Эмоции: {emotions_text}\n"
                     f"Рифма: {rhyme_scheme.value}\n"
+                    f"Жанр: {get_genre_from_top_emotion(emotion_dict)}"
                     "\n[СТИХ]\n"
                     "1. "
                 )
@@ -112,8 +113,8 @@ if __name__ == "__main__":
     emotion_input = {
         "anger": 0.21,
         "no_emotion": 0.01,
-        "fear": 0.70,
-        "joy": 0.01,
+        "fear": 0.01,
+        "joy": 0.70,
         "sadness": 0.01,
         "surprise": 0.11
     }
