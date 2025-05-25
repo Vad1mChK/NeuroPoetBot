@@ -45,14 +45,21 @@ def generate_endpoint():
                 ) or GenerationStrategy.RUGPT3,
             )
 
-        # Process request
+        is_postprocessed = bool(generation_result['poem'].strip())
+
+
         result = {
-            "poem": generation_result['poem'],
+            "poem": (
+                generation_result['poem']
+                if is_postprocessed
+                else generation_result["original_poem"]
+            ),
             "rhyme_scheme": rhyme_scheme.value,
             "timestamp": datetime.now(UTC).isoformat(),
             "user_id": data['user_id'],
             "gen_strategy": data.get('gen_strategy', None),
-            "genre": generation_result['genre']
+            "genre": generation_result['genre'],
+            "is_postprocessed": is_postprocessed,
         }
 
         return jsonify(result), 200
