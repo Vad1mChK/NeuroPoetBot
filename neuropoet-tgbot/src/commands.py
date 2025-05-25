@@ -222,7 +222,10 @@ async def cmd_generate(message: types.Message):
             user_id=message.from_user.id,
             request_text=text,
             emotions=emotions,
-            response_text=poem
+            response_text=poem,
+            model=poetry_response.gen_strategy,
+            rhyme_scheme=poetry_response.rhyme_scheme,
+            genre=poetry_response.genre,
         )
         # Explicitly define rating buttons
         rating_buttons = InlineKeyboardMarkup(
@@ -238,6 +241,7 @@ async def cmd_generate(message: types.Message):
                 f"📃 *Сгенерированное стихотворение*:\n{escape_markdown(poem)}\n\n"
                 f"📈 *Преобладает эмоция*: {top_emotion} \\({top_emotion_percentage}%\\)\n"
                 f"✒ *Схема рифмовки*: {escape_markdown(poetry_response.rhyme_scheme)}\n"
+                f"💡 *Жанр*: {escape_markdown(poetry_response.genre)}\n"
                 f"🧠 *Модель*: `{poetry_response.gen_strategy}`\n\n"
                 "_Оцените генерацию!_"
             ),
@@ -681,7 +685,7 @@ async def handle_command_buttons_for_start(callback: CallbackQuery):
             case "random_poem":
                 await cmd_random_poem(new_message)
             case "feedback":
-                pass  # TODO
+                await cmd_feedback(new_message)
             case _:
                 pass
 

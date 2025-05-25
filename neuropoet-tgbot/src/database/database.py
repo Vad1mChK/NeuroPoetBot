@@ -67,6 +67,7 @@ class Generation(Base):
     response_text = Column(String)
     model = Column(String, nullable=False, default="ru_gpt3")
     rhyme_scheme = Column(String, default="Неизвестно")
+    genre = Column(String, default="произвольный")
 
     # Relationships
     user = relationship("User", back_populates="generations")
@@ -127,6 +128,8 @@ class Database:
             emotions: Dict[str, float],
             response_text: str,
             model: str,
+            rhyme_scheme: str,
+            genre: str,
     ) -> Generation:
         """Log poetry generation result and explicitly return the Generation object"""
         with self.Session() as session:
@@ -138,6 +141,8 @@ class Database:
                 emotions=emotions,
                 response_text=response_text,
                 model=model,
+                rhyme_scheme=rhyme_scheme,
+                genre=genre,
             )
             session.add(generation)
             session.commit()

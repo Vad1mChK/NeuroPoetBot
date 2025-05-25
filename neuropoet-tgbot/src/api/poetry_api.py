@@ -17,6 +17,7 @@ class PoetryGenerationResponseDto:
     poem: str
     gen_strategy: str
     rhyme_scheme: str
+    genre: str
 
 
 class PoetryAPI:
@@ -52,7 +53,8 @@ class PoetryAPI:
                 return PoetryGenerationResponseDto(
                     poem=data["poem"],
                     gen_strategy=data["gen_strategy"],
-                    rhyme_scheme = data.get("rhyme_scheme", "Неизвестно")
+                    rhyme_scheme=data.get("rhyme_scheme", "Неизвестно"),
+                    genre=data.get("genre", "произвольный")
                 )
         except Exception as e:
             return None
