@@ -3,13 +3,17 @@ from datetime import datetime, UTC
 import random
 import os
 from dotenv import load_dotenv
-from src.inference.emotion_poetry_generator import EmotionPoetryGenerator
+from src.inference.emotion_poetry_generator import EmotionPoetryGenerator, GenerationStrategy
 from src.inference.postprocessing import RhymeScheme
 
 app = Flask(__name__)
 generator = EmotionPoetryGenerator()
 
-def generate_poem(emotions: dict[str, float], rhyme_scheme: RhymeScheme = RhymeScheme.ABBA) -> str:
+def generate_poem(
+        emotions: dict[str, float],
+        rhyme_scheme: RhymeScheme = RhymeScheme.ABBA,
+        gen_strategy: GenerationStrategy = GenerationStrategy.RUGPT3
+) -> str:
     global generator
 
     emotions.setdefault("no_emotion", emotions.get("neutral", 0.0))
@@ -18,6 +22,8 @@ def generate_poem(emotions: dict[str, float], rhyme_scheme: RhymeScheme = RhymeS
     return generator.generate_poem(
         emotion_dict=emotions,
         rhyme_scheme=rhyme_scheme,
+        gen_strategy=gen_strategy,
+        do_rhyme_substitution=(gen_strategy == GenerationStrategy.RUGPT3),
     )
 
 
@@ -31,12 +37,20 @@ def generate_endpoint():
             return jsonify({"error": "Invalid request format"}), 400
 
         rhyme_scheme = random.choice([rs for rs in RhymeScheme])
+
         # Process request
         result = {
-            "poem": generate_poem(data['emotions'], rhyme_scheme=rhyme_scheme),
+            "poem": generate_poem(
+                data['emotions'],
+                rhyme_scheme=rhyme_scheme,
+                gen_strategy=GenerationStrategy.for_name(
+                    data.get('gen_strategy', 'rugpt_3')
+                ) or GenerationStrategy.RUGPT3,
+            ),
             "rhyme_scheme": rhyme_scheme.value,
             "timestamp": datetime.now(UTC).isoformat(),
-            "user_id": data['user_id']
+            "user_id": data['user_id'],
+            "gen_strategy": data.get('gen_strategy', None)
         }
 
         return jsonify(result), 200

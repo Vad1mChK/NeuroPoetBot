@@ -22,7 +22,7 @@ def tokenize_function(examples):
         examples["text"],
         truncation=True,
         padding="max_length",
-        max_length=192
+        max_length=256
     )
     tokenized["labels"] = tokenized["input_ids"].copy()
     return tokenized
@@ -57,12 +57,12 @@ model = get_peft_model(model, lora_config)
 # Define training arguments
 training_args = TrainingArguments(
     output_dir="../../models/rugpt3_finetuned",
-    per_device_train_batch_size=8,
-    gradient_accumulation_steps=6,
-    num_train_epochs=8,
+    per_device_train_batch_size=12,
+    gradient_accumulation_steps=8,
+    num_train_epochs=16,
     save_steps=1000,
     learning_rate=2e-4,
-    logging_steps=500,
+    logging_steps=64,
     fp16=True,
     logging_dir="../../models/rugpt3_finetuned/logs",
 )

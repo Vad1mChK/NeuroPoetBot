@@ -28,12 +28,19 @@ class PoemPostprocessor:
             self.word_endings_dict = json.load(f)
         self.stress_rnn = StressRNN()
         self.used_words = {}
+        self.line_number_regex = re.compile(r"^\s*\d+\.\s*(.*)$")
 
-    @staticmethod
-    def strip_line_numbers(lines: list[str]) -> list[str]:
-        line_number_regex = re.compile(r"^\s*\d+\.\s*")
+    def retain_lines_with_numbers(self, lines: list[str]) -> list[str]:
         return [
-            re.sub(line_number_regex, "", line)
+            line
+            for line in lines
+            if re.match(pattern=self.line_number_regex, string=line)
+        ]
+
+    def strip_line_numbers(self, lines: list[str]) -> list[str]:
+
+        return [
+            re.sub(self.line_number_regex, r'\1', line).strip()
             for line in lines
         ]
 
