@@ -44,16 +44,17 @@ class EmotionPoetryGenerator:
             do_rhyme_substitution: bool = True,
             gen_strategy: GenerationStrategy = GenerationStrategy.RUGPT3,
             max_length: int = 256
-    ) -> str | None:
+    ) -> dict[str, str] | None:
         generated_text: str
         emotions_text = emotion_dict_to_russian_str(emotion_dict)
+        genre = get_genre_from_top_emotion(emotion_dict)
 
         match gen_strategy:
             case GenerationStrategy.RUGPT3:
                 prompt = (
                     f"Эмоции: {emotions_text}\n"
                     f"Рифма: {rhyme_scheme.value}\n"
-                    f"Жанр: {get_genre_from_top_emotion(emotion_dict)}"
+                    f"Жанр: {genre}"
                     "\n[СТИХ]\n"
                     "1. "
                 )
@@ -79,6 +80,7 @@ class EmotionPoetryGenerator:
                 generated_text = generate_poem_with_deepseek(
                     emotions=emotion_dict,
                     rhyme_scheme=rhyme_scheme,
+                    genre=genre
                 )
                 if generated_text is None:
                     return None
@@ -87,6 +89,7 @@ class EmotionPoetryGenerator:
                 return None
 
         poem = generated_text.split("[СТИХ]")[-1].strip()
+        original_poem = poem
         if self.postprocessor is not None and do_postprocess:
             postprocessed_lines = poem.split("\n")
             postprocessed_lines = self.postprocessor.retain_lines_with_numbers(postprocessed_lines)
@@ -104,7 +107,11 @@ class EmotionPoetryGenerator:
                 postprocessed_lines = self.postprocessor.drop_last_short_line(postprocessed_lines)
             poem = "\n".join(postprocessed_lines)
 
-        return poem
+        return {
+            "poem": poem,
+            "original_poem": original_poem,
+            "genre": genre
+        }
 
 # Example usage:
 if __name__ == "__main__":
