@@ -239,6 +239,7 @@ class Database:
     def get_feedback_summary(self) -> dict[str, Optional[dict]]:
         with self.Session() as session:
             avg_rating = session.query(func.avg(BotFeedback.rating)).scalar()
+            avg_generation_rating = session.query(func.avg(GenerationRating.rating)).scalar()
 
             best_feedback = session.query(BotFeedback) \
                 .order_by(BotFeedback.rating.desc(), BotFeedback.created_at.asc()) \
@@ -269,6 +270,8 @@ class Database:
 
             return {
                 "average_rating": round(avg_rating, 2) if avg_rating else None,
+                "avg_gen_rating":
+                    round(avg_generation_rating, 2) if avg_generation_rating else None,
                 "best_feedback": serialize_feedback(best_feedback),
                 "worst_feedback": serialize_feedback(worst_feedback),
                 "newest_feedback": serialize_feedback(newest_feedback),

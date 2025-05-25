@@ -501,6 +501,10 @@ async def cmd_get_feedback(message: types.Message):
     reply_text = (
         f"📊 *Статистика отзывов:*\n"
         f"Средний рейтинг: ⭐ {escape_markdown(str(summary['average_rating'])) or 'нет данных'}\n\n"
+        f"Средний рейтинг \\(генерации\\): ⭐ {escape_markdown(str(summary['avg_gen_rating']))}\n"
+        "• по моделям:\n"
+        + "\n".join([])
+        + "\n"
         f"{format_feedback('Лучший отзыв', summary['best_feedback'])}\n"
         f"{format_feedback('Худший отзыв', summary['worst_feedback'])}\n"
         f"{format_feedback('Самый свежий отзыв', summary['newest_feedback'])}\n"
