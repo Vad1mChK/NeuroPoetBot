@@ -243,7 +243,7 @@ async def cmd_generate(message: types.Message):
                 f"✒ *Схема рифмовки*: {escape_markdown(poetry_response.rhyme_scheme)}\n"
                 f"💡 *Жанр*: {escape_markdown(poetry_response.genre)}\n"
                 f"🧠 *Модель*: `{poetry_response.gen_strategy}`\n\n"
-                "_Оцените генерацию!_"
+                "Оцените генерацию\!"
             ),
             parse_mode='MarkdownV2',
             reply_markup=rating_buttons
