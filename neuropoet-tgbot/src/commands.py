@@ -217,7 +217,7 @@ async def cmd_generate(message: types.Message):
             return
 
         emotions = emotion_response.emotions
-        database.log_emotion_analysis(user_id=message.from_user.id, emotions=emotions)
+        database.log_emotion_analysis(user_id=message.from_user.id, emotions=emotions, request_text=text)
         top_emotions = ", ".join(top_emotions_translated(emotions, limit=3))
 
         await reply_message.edit_text(
