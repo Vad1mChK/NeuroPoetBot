@@ -573,7 +573,8 @@ async def cmd_get_feedback(message: types.Message):
     reply_text = (
         f"📊 *Статистика отзывов:*\n"
         f"Средний рейтинг: ⭐ {escape_markdown(str(summary['average_rating'])) or 'нет данных'}\n\n"
-        f"Средний рейтинг \\(генерации\\): ⭐ {escape_markdown(str(summary['avg_gen_rating']))}\n"
+        f"📊 *Статистика генераций:*\n"
+        f"Средний рейтинг \\(генерации\\): ⭐ {escape_markdown(str(summary['avg_gen_rating']))}\n\n"
         "• по моделям:\n"
         + "\n".join(
             f"  • `{entry[0]}`: ⭐ {escape_markdown(str(entry[1]))}"

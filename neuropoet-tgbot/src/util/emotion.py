@@ -1,14 +1,14 @@
 EMOTION_TRANSLATIONS = {
-    # "happy": "радость",
+    "happy": "радость",
     "joy": "радость",
-    # "sad": "грусть",
+    "sad": "грусть",
     "sadness": "грусть",
     "anger": "гнев",
-    # "disgust": "отвращение",
+    "disgust": "отвращение",
     "fear": "страх",
     "surprise": "удивление",
     "neutral": "нейтральная",
-    # "no_emotion": "нейтральная"
+    "no_emotion": "нейтральная"
 }
 
 
