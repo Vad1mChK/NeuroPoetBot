@@ -11,8 +11,8 @@ from aiogram.types import ReactionTypeEmoji, InlineKeyboardMarkup, InlineKeyboar
     BufferedInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from database.database import GenerationModel, get_default_user_settings
-from util.emotion import top_emotions_translated
+from .database.database import GenerationModel, get_default_user_settings, EmotionRating, EmotionAnalysis
+from .util.emotion import translate_emotion, top_emotions_translated
 from .api.emotion_api import EmotionAnalyzeRequestDto
 from .api.poetry_api import PoetryGenerationRequestDto
 from .util.emoji import Emoji
@@ -116,14 +116,13 @@ async def cmd_emotions(message: types.Message):
 
         response = await api.analyze_emotions(request)
 
-        print(response)
-
         if response:
-            # Safe JSON formatting with markdown escaping
-            emotions_json = escape_markdown(json.dumps(response.emotions, indent=2, ensure_ascii=False))
-
             database = await gs().get_database()
-            database.log_emotion_analysis(user_id=message.from_user.id, emotions=response.emotions)
+            emotion_analysis = database.log_emotion_analysis(
+                user_id=message.from_user.id,
+                emotions=response.emotions,
+                request_text=text
+            )
 
             top_emotion = max(
                 response.emotions.keys(),
@@ -143,6 +142,23 @@ async def cmd_emotions(message: types.Message):
             top_emoji = emojis.get(top_emotion, Emoji.NEUTRAL).emoji
 
             emotions_translated = top_emotions_translated(response.emotions)
+            
+            # Создаем кнопки для оценки
+            rating_buttons = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="✅ Правильно",
+                            callback_data=f"emotion_rating:{emotion_analysis.id}:correct"
+                        ),
+                        InlineKeyboardButton(
+                            text="❌ Неправильно",
+                            callback_data=f"emotion_rating:{emotion_analysis.id}:incorrect"
+                        )
+                    ]
+                ]
+            )
+
             await reply_message.edit_text(
                 (
                     f"📊 Распознанные эмоции:\n{escape_markdown("\n".join(
@@ -153,7 +169,8 @@ async def cmd_emotions(message: types.Message):
                         emotions_translated[0] or "неизвестно"
                     )}{top_emoji}"
                 ),
-                parse_mode='MarkdownV2'
+                parse_mode='MarkdownV2',
+                reply_markup=rating_buttons
             )
 
             try:
@@ -539,6 +556,7 @@ async def cmd_owners(message: types.Message):
 async def cmd_get_feedback(message: types.Message):
     database = await gs().get_database()
     summary = database.get_feedback_summary()
+    emotion_stats = database.get_emotion_rating_stats()
 
     def format_feedback(title, feedback):
         if feedback:
@@ -562,6 +580,10 @@ async def cmd_get_feedback(message: types.Message):
             for entry in summary['avg_gen_rating_by_model'].items()
         )
         + "\n\n"
+        f"📊 *Статистика оценок эмоций:*\n"
+        f"Всего оценок: {escape_markdown(str(emotion_stats['total_ratings']))}\n"
+        f"Правильных оценок: {escape_markdown(str(emotion_stats['correct_ratings']))}\n"
+        f"Точность: {escape_markdown(f'{emotion_stats['accuracy'] * 100:.1f}')}%\n\n"
         f"{format_feedback('Лучший отзыв', summary['best_feedback'])}\n"
         f"{format_feedback('Худший отзыв', summary['worst_feedback'])}\n"
         f"{format_feedback('Самый свежий отзыв', summary['newest_feedback'])}\n"
@@ -576,8 +598,34 @@ async def cmd_get_feedback(message: types.Message):
 async def cmd_export_feedback(message: types.Message):
     database = await gs().get_database()
 
+    # Получаем все записи оценок эмоций
+    with database.Session() as session:
+        ratings = session.query(EmotionRating).all()
+        
+        # Формируем данные для экспорта эмоций
+        emotion_data = []
+        for rating in ratings:
+            analysis = session.query(EmotionAnalysis).get(rating.emotion_analysis_id)
+            if analysis:
+                predicted_emotion = max(analysis.emotions.items(), key=lambda x: x[1])[0]
+                emotion_data.append({
+                    "text": analysis.request_text,
+                    "predicted_emotion": predicted_emotion,
+                    "correct_emotion": rating.correct_emotion if not rating.is_correct else predicted_emotion,
+                    "is_correct": rating.is_correct,
+                    "created_at": rating.created_at.isoformat()
+                })
+
+    # Получаем данные отзывов
     feedback_json = database.export_bot_feedback_json()
-    feedback_bytes = feedback_json.encode("utf-8")
+    feedback_data = json.loads(feedback_json)
+
+    # Добавляем данные эмоций в общий JSON
+    feedback_data["emotions"] = emotion_data
+
+    # Создаем финальный JSON
+    final_json = json.dumps(feedback_data, ensure_ascii=False, indent=2)
+    feedback_bytes = final_json.encode("utf-8")
     MAX_DISPLAY_LEN = 1024
 
     file = BufferedInputFile(
@@ -586,7 +634,7 @@ async def cmd_export_feedback(message: types.Message):
     )
 
     summary = (
-        "📃 *Содержимое отзывов: *" + f"```json\n{feedback_json}\n```"
+        "📃 *Содержимое отзывов: *" + f"```json\n{final_json}\n```"
         if len(feedback_bytes) <= MAX_DISPLAY_LEN
         else (
             f"📃 *Содержимое отзывов превышает размер для отображения*: {MAX_DISPLAY_LEN} Б, "
@@ -753,3 +801,67 @@ async def handle_feedback_reply(message: types.Message):
         await message.reply_to_message.edit_text("✅ Оценка и комментарий успешно сохранены. Спасибо!")
     else:
         await message.reply("⚠️ Не удалось найти отзыв, связанный с этим сообщением.")
+
+@router.callback_query(lambda c: c.data.startswith('emotion_rating:'))
+async def emotion_rating_handler(callback: CallbackQuery):
+    database = await gs().get_database()
+    
+    # Парсим данные callback
+    _, analysis_id, rating = callback.data.split(":")
+    analysis_id = int(analysis_id)
+    user_id = callback.from_user.id
+
+    # Проверяем, не оценивал ли пользователь уже этот анализ
+    if database.has_user_rated_emotion(user_id, analysis_id):
+        await callback.answer("❌ Вы уже оценили этот анализ эмоций.", show_alert=True)
+        return
+
+    if rating == "correct":
+        # Если оценка "правильно", сохраняем и удаляем кнопки
+        database.rate_emotion_analysis(
+            user_id=user_id,
+            emotion_analysis_id=analysis_id,
+            is_correct=True
+        )
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer("Спасибо за оценку!", show_alert=False)
+    else:
+        # Если оценка "неправильно", показываем кнопки с эмоциями
+        emotions = ['joy', 'sadness', 'surprise', 'fear', 'anger', 'neutral']
+        emotion_buttons = [
+            [InlineKeyboardButton(
+                text=translate_emotion(emotion),
+                callback_data=f"emotion_correct:{analysis_id}:{emotion}"
+            )]
+            for emotion in emotions
+        ]
+        
+        await callback.message.edit_reply_markup(
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=emotion_buttons)
+        )
+        await callback.answer("Выберите правильную эмоцию:", show_alert=False)
+
+
+@router.callback_query(lambda c: c.data.startswith('emotion_correct:'))
+async def emotion_correct_handler(callback: CallbackQuery):
+    database = await gs().get_database()
+    
+    # Парсим данные callback
+    _, analysis_id, correct_emotion = callback.data.split(":")
+    analysis_id = int(analysis_id)
+    user_id = callback.from_user.id
+
+    # Сохраняем правильную эмоцию
+    database.rate_emotion_analysis(
+        user_id=user_id,
+        emotion_analysis_id=analysis_id,
+        is_correct=False,
+        correct_emotion=correct_emotion
+    )
+
+    # Удаляем кнопки
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer(
+        f"Спасибо! Правильная эмоция: {translate_emotion(correct_emotion)}",
+        show_alert=False
+    )
