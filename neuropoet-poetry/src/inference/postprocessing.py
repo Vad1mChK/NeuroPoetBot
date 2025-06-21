@@ -2,7 +2,7 @@ import json
 import re
 import numpy as np
 from enum import Enum
-from preprocessing.preprocessing_utils import extract_rhyme_key, stress_accents, count_syllables
+from ..preprocessing.preprocessing_utils import extract_rhyme_key, stress_accents, count_syllables
 from stressrnn import StressRNN
 
 
