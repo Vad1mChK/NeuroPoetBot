@@ -4,9 +4,9 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
-from preprocessing.preprocessing_utils import emotion_dict_to_russian_str, get_genre_from_top_emotion
-from postprocessing import RhymeScheme, PoemPostprocessor
-from deepseek_api import generate_poem_with_deepseek
+from ..preprocessing.preprocessing_utils import emotion_dict_to_russian_str, get_genre_from_top_emotion
+from .postprocessing import RhymeScheme, PoemPostprocessor
+from .deepseek_api import generate_poem_with_deepseek
 
 import os
 # Explicitly get project root from current file location
@@ -89,7 +89,7 @@ class EmotionPoetryGenerator:
                 return None
 
         poem = generated_text.split("[СТИХ]")[-1].strip()
-        original_poem = poem
+        original_poem = generated_text
         if self.postprocessor is not None and do_postprocess:
             postprocessed_lines = poem.split("\n")
             postprocessed_lines = self.postprocessor.retain_lines_with_numbers(postprocessed_lines)

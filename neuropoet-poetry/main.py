@@ -5,6 +5,8 @@ import os
 from dotenv import load_dotenv
 from src.inference.emotion_poetry_generator import EmotionPoetryGenerator, GenerationStrategy
 from src.inference.postprocessing import RhymeScheme
+import time
+import pandas as pd
 
 app = Flask(__name__)
 generator = EmotionPoetryGenerator()
@@ -16,15 +18,27 @@ def generate_poem(
 ) -> dict[str, str]:
     global generator
 
+    t_start = time.time()
+
     emotions.setdefault("no_emotion", emotions.get("neutral", 0.0))
     emotions.pop('neutral', None)
 
-    return generator.generate_poem(
+    generation_result = generator.generate_poem(
         emotion_dict=emotions,
         rhyme_scheme=rhyme_scheme,
         gen_strategy=gen_strategy,
         do_rhyme_substitution=(gen_strategy == GenerationStrategy.RUGPT3),
     )
+
+    time_elapsed = time.time() - t_start
+    csv_file = './poetry_times.csv'
+    df = pd.DataFrame({'gen_strategy': gen_strategy.value, 'time_elapsed': time_elapsed}, index=[0])
+    if os.path.exists(csv_file):
+        df.to_csv(csv_file, index=False, header=False, mode='a')
+    else:
+        df.to_csv(csv_file, index=False, header=True, mode='w')
+
+    return generation_result
 
 
 @app.route('/generate', methods=['POST'])

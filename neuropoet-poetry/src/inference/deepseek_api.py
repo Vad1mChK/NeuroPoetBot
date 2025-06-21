@@ -4,8 +4,8 @@ import requests
 import re
 import json
 
-from inference.postprocessing import RhymeScheme
-from preprocessing.preprocessing_utils import emotion_dict_to_russian_str
+from .postprocessing import RhymeScheme
+from ..preprocessing.preprocessing_utils import emotion_dict_to_russian_str
 
 load_dotenv()
 
@@ -59,7 +59,7 @@ def generate_poem_with_deepseek(
         .replace('<LINE_COUNT>', str(line_count or len(genre)))
     )
     request = {
-        "model": "deepseek/deepseek-r1-zero:free",
+        "model": "deepseek/deepseek-r1-0528:free",
         "messages": [
             {
                 "role": "user",
